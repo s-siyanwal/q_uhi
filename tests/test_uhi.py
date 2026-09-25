@@ -91,3 +91,22 @@ def test_cubic_and_cluster_models_quadratize_exactly():
     assert q.qubo.is_quadratic
     # both are solved exactly by MILP; quadratisation must preserve the minimum
     assert np.isclose(MILPSolver().solve(q.qubo).best_energy, MILPSolver().solve(f).best_energy)
+
+
+def test_fitted_quadratic_beats_truncation_under_strong_overlap():
+    """With long cooling reach the Taylor QUBO is biased; the least-squares QUBO is not."""
+    from quhi.uhi import Intervention
+    city = generate_city(8, 8, seed=3, candidate_fraction=0.4)
+    iv = Intervention("park", 1.5, 300.0, 3)
+    prob = UHIPlanningProblem(city, interventions=(iv,), prune_tol=0)
+    fit = prob.fitted_quadratic(n_samples=3000, seed=1)
+    trunc = prob.objective(2)
+    rng = np.random.default_rng(9)
+    kmax = int(prob.budget // iv.cost)                      # region the budget allows
+    X = np.zeros((300, prob.n), dtype=np.int8)
+    for r in range(300):
+        X[r, rng.choice(prob.n, size=rng.integers(0, kmax + 1), replace=False)] = 1
+    ft = prob.true_objective(X)
+    err_fit = np.abs(fit.energies(X) - ft).mean()
+    err_trunc = np.abs(trunc.energies(X) - ft).mean()
+    assert fit.is_quadratic and err_fit < 0.5 * err_trunc

@@ -187,6 +187,33 @@ class UHIPlanningProblem:
         offset = float(w @ self.city.base_temp.ravel())
         return BinaryPolynomial(terms, offset, n, self.names)
 
+    def fitted_quadratic(self, max_k: Optional[int] = None, n_samples: int = 4000,
+                         ridge: float = 1e-6, seed: int = 0) -> BinaryPolynomial:
+        """QUBO surrogate fitted by least squares to the exact objective on sampled plans.
+
+        Unlike the inclusion-exclusion truncation (order=2), which is exact only near
+        x = 0 and degrades when cooling kernels overlap strongly (docs/RESULTS.md,
+        E2), this fits linear + pairwise coefficients on plans with 0..max_k
+        interventions - the region the budget actually allows.
+        """
+        rng = np.random.default_rng(seed)
+        n = self.n
+        max_k = max_k or max(1, int(self.budget // max(1, self.costs.min())))
+        X = np.zeros((n_samples, n), dtype=np.int8)
+        for r in range(n_samples):
+            k = rng.integers(0, min(max_k, n) + 1)
+            X[r, rng.choice(n, size=k, replace=False)] = 1
+        y = self.true_objective(X)
+        iu, ju = np.triu_indices(n, 1)
+        F = np.hstack([np.ones((n_samples, 1)), X, X[:, iu] * X[:, ju]]).astype(float)
+        A = F.T @ F + ridge * np.eye(F.shape[1])
+        c = np.linalg.solve(A, F.T @ y)
+        terms = {(v,): c[1 + v] for v in range(n)}
+        for k, (u, v) in enumerate(zip(iu, ju)):
+            if abs(c[1 + n + k]) > 1e-12:
+                terms[(int(u), int(v))] = c[1 + n + k]
+        return BinaryPolynomial(terms, float(c[0]), n, self.names)
+
     def program(self, order: int = 2) -> ConstrainedBinaryProgram:
         cons = [LinearConstraint({v: int(c) for v, c in enumerate(self.costs)}, "<=",
                                  int(self.budget), "budget")]
@@ -228,6 +255,32 @@ class UHIPlanningProblem:
             if x[v]:
                 g[i] = o
         return g.reshape(self.city.shape)
+
+    def greedy_plan(self) -> np.ndarray:
+        """Planner's baseline: repeatedly add the (cell, option) with the best exact
+        marginal exposure reduction per unit cost that keeps the plan feasible
+        (budget, one option per cell).  Equity constraints are not targeted."""
+        x = np.zeros(self.n, dtype=np.int8)
+        spent = 0
+        used = set()
+        f = self.true_objective(x)[0]
+        while True:
+            best, best_ratio, best_f = None, 0.0, f
+            for v, (i, _) in enumerate(self.variables):
+                if x[v] or i in used or spent + self.costs[v] > self.budget:
+                    continue
+                x[v] = 1
+                fv = self.true_objective(x)[0]
+                x[v] = 0
+                ratio = (f - fv) / self.costs[v]
+                if ratio > best_ratio:
+                    best, best_ratio, best_f = v, ratio, fv
+            if best is None:
+                return x
+            x[best] = 1
+            spent += self.costs[best]
+            used.add(self.variables[best][0])
+            f = best_f
 
     def report(self, x: np.ndarray) -> dict:
         x = np.asarray(x)[: self.n]

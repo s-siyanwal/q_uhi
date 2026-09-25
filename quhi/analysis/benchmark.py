@@ -10,8 +10,10 @@ import numpy as np
 
 from ..constraints import ConstrainedBinaryProgram, PenaltyEncoding
 from ..polynomial import BinaryPolynomial
-from ..quadratize import Quadratization
+from ..postprocess import postprocess as _postprocess
+from ..quadratize import Quadratization, quadratize
 from ..solvers.base import SampleSet, Solver
+from ..solvers.exact import MILPSolver
 from .metrics import benefit_ratio, success_probability, tts, wilson_interval
 
 
@@ -32,18 +34,53 @@ class Instance:
         return np.atleast_2d(X)[:, : self.program.n]
 
 
-def score(inst: Instance, ss: SampleSet) -> Dict[str, float]:
+def build_instance(name: str, program: ConstrainedBinaryProgram, penalty_mult: float = 1.0,
+                   quadratized: bool = False, meta: Optional[dict] = None,
+                   f_opt: Optional[float] = None) -> Instance:
+    """Encode ``program`` with ``penalty_mult`` x the certified-safe penalty weight and
+    certify its constrained optimum with MILP (unless ``f_opt`` is given)."""
+    safe = program.to_penalty_model()
+    enc = program.to_penalty_model(penalty_weight=penalty_mult * safe.penalty_weight) \
+        if penalty_mult != 1.0 else safe
+    q = quadratize(enc.model) if quadratized and not enc.model.is_quadratic else None
+    model = q.qubo if q is not None else enc.model
+    if f_opt is None:
+        ms = MILPSolver().solve(program)
+        if not ms.info["optimal"]:
+            raise RuntimeError(f"MILP did not certify optimality for {name}: {ms.info['message']}")
+        f_opt = ms.best_energy
+    f0 = float(program.objective_values(np.zeros(program.n))[0])
+    m = {"penalty_mult": penalty_mult, "penalty_weight": enc.penalty_weight,
+         "safe_penalty_weight": safe.penalty_weight, "quadratized": q is not None,
+         "n_slack": enc.model.n - program.n, "n_aux": (q.qubo.n - enc.model.n) if q else 0,
+         **(meta or {})}
+    return Instance(name, program, enc, model, float(f_opt), f0, q, m)
+
+
+def score(inst: Instance, ss: SampleSet, postprocess: bool = False) -> Dict[str, float]:
     """Constrained-problem metrics for a sample set.
 
     A read "succeeds" if its decision part is feasible AND attains the certified
-    constrained optimum f_opt of the original objective.
+    constrained optimum f_opt of the original objective.  With ``postprocess``
+    the same metrics are also reported (suffix ``_pp``) after repair + feasible
+    local search (quhi.postprocess), including its extra time.
     """
-    Xd = inst.decision(ss.samples)
+    out = _score_decisions(inst, inst.decision(ss.samples), ss.wall_time)
+    if postprocess:
+        t0 = time.perf_counter()
+        Xp = _postprocess(inst.program, inst.decision(ss.samples))
+        tpp = time.perf_counter() - t0
+        pp = _score_decisions(inst, Xp, ss.wall_time + tpp)
+        out.update({f"{k}_pp": v for k, v in pp.items() if k not in ("reads",)})
+    return out
+
+
+def _score_decisions(inst: Instance, Xd: np.ndarray, wall: float) -> Dict[str, float]:
     feas = inst.program.is_feasible(Xd)
     f = inst.program.objective_values(Xd)
     ok = feas & (f <= inst.f_opt + 1e-7 * max(1.0, abs(inst.f_opt)))
     k, n = int(ok.sum()), len(ok)
-    t_read = ss.wall_time / max(n, 1)
+    t_read = wall / max(n, 1)
     br = benefit_ratio(np.where(feas, f, inst.f_baseline), inst.f_baseline, inst.f_opt)
     lo, hi = wilson_interval(k, n)
     best_feas = float(f[feas].min()) if feas.any() else np.nan
@@ -59,19 +96,19 @@ def score(inst: Instance, ss: SampleSet) -> Dict[str, float]:
         "best_benefit_ratio": float(br.max()),
         "time_per_read_s": t_read,
         "tts99_s": tts(k / n, t_read),
-        "wall_time_s": ss.wall_time,
+        "wall_time_s": wall,
     }
 
 
 def run(inst: Instance, solvers: Dict[str, Solver], seeds: Sequence[int] = (0,),
-        extra: Optional[dict] = None, keep: bool = False) -> List[dict]:
+        extra: Optional[dict] = None, keep: bool = False, postprocess: bool = False):
     rows, kept = [], {}
     for label, s in solvers.items():
         for seed in seeds:
             ss = s.sample(inst.model, seed=seed)
             row = {"instance": inst.name, "solver": label, "seed": seed, "n_vars": inst.model.n,
                    "n_decision": inst.program.n, "degree": inst.model.degree,
-                   **(inst.meta or {}), **(extra or {}), **score(inst, ss)}
+                   **(inst.meta or {}), **(extra or {}), **score(inst, ss, postprocess)}
             rows.append(row)
             if keep:
                 kept.setdefault(label, []).append(ss)

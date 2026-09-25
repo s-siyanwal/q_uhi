@@ -134,7 +134,8 @@ def plot_metric_vs(df, x: str, y: str, hue: str = "solver", path: Optional[str] 
         q1, q3 = s.quantile(0.25), s.quantile(0.75)
         ax.plot(med.index, med.values, marker="o", label=str(label))
         ax.fill_between(med.index, q1.values, q3.values, alpha=0.15)
-    if logy:
+    vals = np.asarray(df[y], dtype=float)
+    if logy and np.any(np.isfinite(vals) & (vals > 0)):
         ax.set_yscale("log")
     if logx:
         ax.set_xscale("log")

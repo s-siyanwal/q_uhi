@@ -67,3 +67,8 @@ dmypy.json
 *.bak
 *.swp
 .DS_Store
+
+# quhi
+examples/output/
+*.nbi
+*.nbc
