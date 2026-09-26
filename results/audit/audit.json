@@ -136,5 +136,10 @@
       "SQA": 0
     },
     "sqa_all_zero": true
+  },
+  "A7_auto_penalty_underestimate": {
+    "n": 10,
+    "legacy_weight": 10.000000000000002,
+    "true_range": 100.0
   }
 }

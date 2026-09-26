@@ -199,7 +199,7 @@ def annealing_spectrum(model: BinaryPolynomial, s_values: Sequence[float], k: in
     E_d(s) - E_0(s), reported as ``gap``.  Dense diagonalisation for
     n <= ``dense_max_n``, Lanczos (eigsh) above.
     """
-    from scipy.sparse.linalg import LinearOperator, eigsh
+    from scipy.sparse.linalg import eigsh
 
     diag = _hamiltonian_parts(model, normalise)
     n = model.n
@@ -208,8 +208,16 @@ def annealing_spectrum(model: BinaryPolynomial, s_values: Sequence[float], k: in
     kk = min(max(k, d + 2), N - 2)
     drv = _driver_matvec(n)
     Xsum = None
+    Xsp = None
     if n <= dense_max_n:
         Xsum = np.column_stack([drv(e) for e in np.eye(N)])
+    else:                                  # compiled sparse matvec: ~10x faster than drv()
+        import scipy.sparse as sparse
+        idx = np.arange(N)
+        rows = np.tile(idx, n)
+        cols = np.concatenate([idx ^ (1 << q) for q in range(n)])
+        Xsp = sparse.csr_matrix((-np.ones(rows.size), (rows, cols)), shape=(N, N))
+        Dsp = sparse.diags(diag)
     evs = []
     for s in s_values:
         if s >= 1.0 - 1e-12:              # H(1) = H_P is diagonal: exact, and avoids slow
@@ -218,10 +226,9 @@ def annealing_spectrum(model: BinaryPolynomial, s_values: Sequence[float], k: in
         if Xsum is not None:
             w = np.linalg.eigvalsh((1 - s) * Xsum + s * np.diag(diag))[:kk]
         else:
-            op = LinearOperator((N, N), matvec=lambda v, s=s: (1 - s) * drv(v) + s * diag * np.asarray(v).ravel(),
-                                dtype=float)
-            w = np.sort(eigsh(op, k=kk, which="SA", return_eigenvectors=False, tol=1e-10,
-                              ncv=min(N - 1, max(4 * kk, 40))))
+            # larger Krylov space copes with the binomially degenerate driver spectrum
+            w = np.sort(eigsh((1 - s) * Xsp + s * Dsp, k=kk, which="SA", return_eigenvectors=False,
+                              tol=1e-10, ncv=min(N - 1, max(10 * kk, 64))))
         evs.append(np.sort(w))
     evs = np.array(evs)
     gap = evs[:, d] - evs[:, 0]
