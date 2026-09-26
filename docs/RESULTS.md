@@ -240,3 +240,130 @@ the optimiser, limits what can be achieved.
   weak penalties plus classical repair, and must benchmark against greedy and MILP.
 * **Statistics.** 3 instances × 4 seeds per cell are enough to see the trends reported here, but
   not for fine-grained scaling exponents.
+
+---
+
+# Next slice: E8–E11 (see docs/NEXT.md)
+
+Success criterion: match the **greedy planner and HiGHS MILP** at matched wall-clock on both
+families. Matching SA is not enough.
+
+## E8: constraint-preserving mixers
+`results/E8_mixers/`. Setup:
+- **Park instances (8):** the E6 instance, its "exactly 3 parks" twin (a pure Dicke/XY case),
+  and E3 park 8×8 and 10×10 (3 seeds each).
+- **Mix+equity instances (6):** 6×6 and 7×7 cities with three intervention types, equity, and
+  |F| from 720 to 2,243.
+- **QAOA settings:** p ∈ {1, 2}; one L-BFGS-B run from a linear ramp plus one random restart.
+- **Heuristics:** 32 reads × 3 seeds.
+
+P(opt) is exact for QAOA and per read for heuristics. Benefit is measured on the exact
+saturating physics relative to the MILP plan; infeasible counts as 0.
+
+| family | method | P(opt) | P(feasible) | benefit (exact) | wall s |
+|---|---|---|---|---|---|
+| park | MILP | 1 | 1 | 1 | 0.09 |
+| park | Greedy planner | 0.86 | 1 | 1.00 | 0.001 |
+| park | XY-QAOA (swap+add/remove) p=1 / p=2 | 0.063 / 0.197 | **1** | 0.87 / 0.94 | 1.6 / 7.1 |
+| park | X-mixer penalty QAOA p=1 / p=2 (≤16 qubits) | 0.008 / 0.011 | 0.70 / 0.80 | 0.40 / 0.51 | 0.6 / 1.1 |
+| park | FeasibleSA | **1** | 1 | 1 | 0.26 |
+| park | SA (safe-Λ QUBO) | 0.25 | 1 | 0.96 | 0.07 |
+| park | Tabu (safe-Λ QUBO) | 1 | 1 | 1 | 0.02 |
+| exactly-3 | Dicke-XY complete p=1 / p=2 | 0.18 / 0.37 | **1** | 0.94 / 0.97 | 3 / 15 |
+| exactly-3 | Dicke-XY ring p=1 / p=2 | 0.04 / 0.14 | 1 | 0.88 / 0.91 | 3 / 16 |
+| exactly-3 | X-mixer penalty QAOA p=1 / p=2 | 0.004 / 0.005 | 0.45 / 0.62 | 0.35 / 0.49 | 0.2 / 0.3 |
+| mix+eq | MILP | 1 | 1 | 1 | 0.18 |
+| mix+eq | Greedy planner | 0.33 | 0.33 | 0.33 | 0.002 |
+| mix+eq | XY-QAOA p=1 / p=2 | 0.002 / 0.003 | **1** | 0.60 / 0.61 | 3.6 / 25 |
+| mix+eq | FeasibleSA | **0.39** | 1 | **0.92** | 0.79 |
+| mix+eq | SA / Tabu (safe-Λ QUBO) | 0.002 / 0 | 1.0 | 0.61 / 0.61 | 0.2 / 0.14 |
+
+Two further notes:
+- **Benefit slightly above 1.** The greedy planner scores 1.0001 on park instances because it
+  optimises the exact physics, whereas MILP optimises the pessimistic QUBO surrogate.
+- **Skipped.** X-mixer QAOA is omitted wherever the penalty QUBO needs more than 16 qubits
+  (all 10×10 park and all mix instances).
+
+**Readings.**
+- **Constraint-preserving mixers remove the penalty failure mode.** P(feasible) = 1 by
+  construction. At equal depth, P(opt) is **10–70× higher** than X-mixer penalty QAOA on the
+  same instances, e.g. 0.37 vs 0.005 for Dicke-XY vs X-mixer at p=2 on "exactly 3".
+- **They do not reach the classical bar.** On park instances greedy, Tabu and FeasibleSA find
+  the optimum essentially every time, in milliseconds. On mix+equity, XY-QAOA at p ≤ 2 barely
+  beats uniform sampling of F (P(opt) ≈ 0.002), while FeasibleSA reaches 0.39 per read and a
+  benefit of 0.92.
+- **Complete beats ring.** Complete-graph XY mixing outperforms the ring XY mixer.
+- **Negative result.** Constraint-preserving QAOA closes the gap to penalty QAOA, not to
+  greedy or MILP.
+
+## FeasibleSA (fair classical annealer)
+FeasibleSA is Metropolis on feasible decision vectors only: add/remove and swap moves,
+energy = f(x), no Λ. It is the strongest heuristic on mix+equity in E8 (0.39 vs ≤ 0.002 for
+penalty SA and Tabu) and in E9 (P(opt) 0.46 per read, benefit 0.96).
+
+## E9: weak penalty + repair as the declared hybrid recipe
+`results/E9_hybrid/`. Setup: E3 mix+equity 8×8, 10×10 and 12×12 cities (3 seeds each, all
+certified by MILP), 2 sampler seeds, α·Λ_safe with α ∈ {0.01, 0.03, 0.1, 1}. Raw and
+post-processed (pp) columns are reported separately; pp means repair plus feasible local search.
+
+| solver | α | P(feas) raw | P(opt) raw | P(opt) pp | benefit pp | s/read (pp) |
+|---|---|---|---|---|---|---|
+| SA | 0.01 / 1 | 0.61 / 0.98 | 0.02 / 0 | 0.50 / 0.03 | 0.94 / 0.81 | 0.07 |
+| SA-matched | 0.01 / 1 | 0.72 / 1 | 0.17 / 0.003 | **0.80** / 0.18 | **0.98** / 0.90 | 0.25 |
+| SQA (PIMC) | 0.01 / 1 | 0.83 / 1 | 0.16 / 0.003 | 0.77 / 0.11 | 0.98 / 0.88 | 0.53 |
+| Tabu | 0.01 / 1 | 0.79 / 0.98 | 0.08 / 0 | 0.32 / 0.01 | 0.90 / 0.75 | 0.07 |
+| FeasibleSA | – | 1 | 0.46 | – | 0.96 (raw) | 0.13 |
+| Greedy planner | – | 0.44 | 0.44 | – | 0.44 | 0.007 |
+| MILP | – | 1 | 1 | – | 1 | 3.8 |
+
+**Readings.**
+- **The hybrid recipe works.** α = 0.01 plus repair raises P(opt) from ≤ 0.18 (safe Λ) to
+  0.77–0.80 for SA-matched and SQA.
+- **SQA gains nothing over compute-matched SA** (0.77 vs 0.80), at about 2× the time per read.
+- **Greedy is fast but unreliable here.** It violates equity on 5 of 9 instances. MILP is
+  certified and takes 3.8 s on average.
+- **This is hybrid, not end-to-end quantum.** Nothing here meets MILP's P(opt) = 1.
+
+## E10: penalty form (quick run: 2 instances)
+`results/E10_penalty_form/`. Unbalanced and linear penalties need no slack bits (10 vs 13 variables here).
+
+| form | dynamic range | ground state feasible | ground state optimal | SA P(opt) raw | P(opt) pp |
+|---|---|---|---|---|---|
+| quadratic slack, Λ_safe (exact) | 163 | 1 | 1 | 0.34 | 0.72 |
+| unbalanced 0.1·Λ_safe | **16.5** | 1 | 1 | **0.53** | **0.86** |
+| unbalanced 1·Λ_safe | 163 | 1 | 1 | 0.56 | 0.81 |
+| linear 0.5·μ / 1·μ / 2·μ | 0.4–1.0 | 0 / 0.5 / 1 | 0 / 0.5 / 0 | 0 / 0.5 / 0 | 1 / 0.5 / 1 |
+
+- **Unbalanced penalty at 0.1·Λ_safe helps** on these two instances: 10× smaller dynamic range
+  and better samples, with the ground state still optimal.
+- **But it is not certified in general.** Its exactness is instance-dependent.
+- **The linear penalty is a Lagrangian relaxation.** Its ground states are feasible or optimal
+  only for lucky multipliers.
+- **Small sample.** This needs the full run before any claim is made.
+
+## E11: native HUBO vs Rosenberg QUBO spectra (quick run: 2 instances)
+`results/E11_pubo_gap/`. Setup: cubic (K=3) objective, 6 decision variables.
+
+| model | qubits | final gap | P(ground), T=10 |
+|---|---|---|---|
+| A: native cubic HUBO + slack penalty | 9 | 9.4e-5 / 1.1e-5 | 3.1e-3 |
+| B: Rosenberg QUBO of A | 16 | 9.4e-5 / 1.1e-5 | 2.4e-5 |
+| C: native HUBO on F (infeasible padded, diagonal only) | 6 | 2.4e-2 / 3.7e-3 | 4.5e-2 / 4.1e-2 |
+
+- **Quadratisation does not change the bottleneck gap.** The final gap is set by the slack
+  penalty, and A and B are identical to three digits.
+- **It still costs a lot.** B needs 7 more qubits, and the short-anneal P(ground) falls about
+  100×.
+- **Removing the penalty helps most.** C's gap is about 250× larger, consistent with E6: the
+  penalty, not the degree, controls the gap. C is a diagonal-only simulation and is not
+  hardware-realisable.
+
+## Verdict of this slice
+No quantum or quantum-inspired method reached the success criterion:
+- **Park family:** greedy, Tabu and FeasibleSA find the certified optimum every time in
+  milliseconds; XY-QAOA peaks at P(opt) ≈ 0.2–0.4.
+- **Mix+equity family:** the best non-MILP methods are the hybrid recipe (SA-matched or SQA with
+  weak Λ plus repair, P(opt) ≈ 0.8) and FeasibleSA (≈ 0.4–0.5 per read, benefit 0.92–0.96).
+  SQA shows no advantage over compute-matched SA.
+- **Mixers help, but not enough.** Constraint-preserving mixers are a real improvement over
+  penalty QAOA (10–70×), yet remain well below classical at p ≤ 2.

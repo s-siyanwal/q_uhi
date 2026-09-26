@@ -92,3 +92,25 @@ def test_milp_matches_enumeration(seed):
     assert ms.info["optimal"]
     assert cbp.is_feasible(ms.best)[0]
     assert np.isclose(ms.best_energy, _constrained_opt(cbp))
+
+
+@pytest.mark.parametrize("form", ["unbalanced", "linear"])
+def test_inexact_penalty_forms_match_their_formulas(form):
+    rng = np.random.default_rng(3)
+    cbp = _random_program(rng)
+    lam, l1, l2 = 1.7, 0.9, 0.4
+    enc = cbp.to_penalty_model(penalty_weight=lam, form=form, lambdas=(l1, l2))
+    assert enc.model.n == cbp.n                                # no slack bits
+    X = all_states(cbp.n)
+    expect = cbp.objective_values(X).copy()
+    for c in cbp.constraints:
+        ax = c.lhs(X)
+        if c.sense == "==":
+            expect += lam * (ax - c.rhs) ** 2
+            continue
+        h = (c.rhs - ax) if c.sense == "<=" else (ax - c.rhs)
+        expect += (-lam * h) if form == "linear" else (-l1 * h + l2 * h ** 2)
+    for g in cbp.at_most_one:
+        s = X[:, g].sum(1)
+        expect += lam * s * (s - 1) / 2
+    assert np.allclose(enc.model.energies(X), expect)

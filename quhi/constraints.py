@@ -198,12 +198,28 @@ class ConstrainedBinaryProgram:
 
     def to_penalty_model(self, penalty_weight: Optional[float] = None,
                          feasible_hint: Optional[np.ndarray] = None,
-                         safety: float = 1.0) -> PenaltyEncoding:
+                         safety: float = 1.0, form: str = "quadratic_slack",
+                         lambdas: Optional[Tuple[float, float]] = None) -> PenaltyEncoding:
         """Unconstrained model F(x, s) = f(x) + Lambda * P(x, s).
 
         ``penalty_weight=None`` uses the provably exact :func:`safe_penalty_weight`
         (times ``safety``).  Pass a number to override (e.g. for tuning studies).
+
+        ``form`` selects how *inequality* constraints are penalised (equalities and
+        at-most-one groups always use their exact, slack-free quadratic penalties):
+
+        * ``"quadratic_slack"`` (default): (a.x + slack - b)^2, exact (see module docstring).
+        * ``"unbalanced"``: -l1*h + l2*h^2 with h = b - a.x for ``<=`` (h = a.x - b for ``>=``),
+          l1, l2 = ``lambdas`` (default: both = ``penalty_weight``). No slack bits.
+          **Not exact**: violations cost l1 + l2 per unit (for a unit violation), but some
+          feasible points are also penalised (large h) and ground states can be infeasible
+          (Montanez-Barrera et al. 2023, unbalanced penalisation).
+        * ``"linear"``: ``penalty_weight`` * (a.x - b) for ``<=`` (and b - a.x for ``>=``),
+          a Lagrangian-style term. No slack bits. **Not exact**: feasibility must be checked
+          after sampling.
         """
+        if form != "quadratic_slack":
+            return self._inexact_penalty_model(penalty_weight, feasible_hint, safety, form, lambdas)
         n_total = self.n + self.num_slack()
         P, slices, _ = self.penalty_polynomial(n_total)
         if penalty_weight is None:
@@ -216,6 +232,52 @@ class ConstrainedBinaryProgram:
             names += [f"slack[{name}]{k}" for k in range(sl.stop - sl.start)]
         model.names = names
         return PenaltyEncoding(model, self.n, slices, float(penalty_weight))
+
+
+def _inexact_penalty_model(self, penalty_weight, feasible_hint, safety, form, lambdas):
+    if form not in ("unbalanced", "linear"):
+        raise ValueError(f"unknown penalty form {form!r}")
+    if penalty_weight is None:
+        penalty_weight = safety * safe_penalty_weight(self, feasible_hint)
+    lam = float(penalty_weight)
+    l1, l2 = lambdas if lambdas is not None else (lam, lam)
+    n = self.n
+    model = BinaryPolynomial(dict(self.objective.terms), self.objective.offset, n)
+    for c in self.constraints:
+        items = sorted(c.coeffs.items())
+        if c.sense == "==":                                   # exact, no slack
+            for i, a in items:
+                model.add_term((i,), lam * (a * a - 2.0 * c.rhs * a))
+            for p_ in range(len(items)):
+                for q in range(p_ + 1, len(items)):
+                    model.add_term((items[p_][0], items[q][0]), 2.0 * lam * items[p_][1] * items[q][1])
+            model.offset += lam * float(c.rhs) ** 2
+            continue
+        sgn = 1.0 if c.sense == "<=" else -1.0               # h = sgn*(b - a.x) >= 0 when feasible
+        # h = sgn*b - sum_i sgn*a_i x_i
+        hb = sgn * c.rhs
+        ha = [(i, -sgn * a) for i, a in items]
+        if form == "linear":
+            model.offset -= lam * hb
+            for i, a in ha:
+                model.add_term((i,), -lam * a)
+        else:                                                 # -l1*h + l2*h^2
+            model.offset += -l1 * hb + l2 * hb * hb
+            for i, a in ha:
+                model.add_term((i,), -l1 * a + l2 * (a * a + 2.0 * hb * a))
+            for p_ in range(len(ha)):
+                for q in range(p_ + 1, len(ha)):
+                    model.add_term((ha[p_][0], ha[q][0]), 2.0 * l2 * ha[p_][1] * ha[q][1])
+    for g in self.at_most_one:
+        for p_ in range(len(g)):
+            for q in range(p_ + 1, len(g)):
+                model.add_term((g[p_], g[q]), lam)
+    model.n = n
+    model.names = list(self.names) if self.names is not None else [f"x{i}" for i in range(n)]
+    return PenaltyEncoding(model, n, {}, lam)
+
+
+ConstrainedBinaryProgram._inexact_penalty_model = _inexact_penalty_model
 
 
 def greedy_feasible(cbp: ConstrainedBinaryProgram, rng: Optional[np.random.Generator] = None,

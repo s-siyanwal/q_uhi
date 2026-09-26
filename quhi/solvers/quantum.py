@@ -172,7 +172,9 @@ class QAOA(Solver):
 # ------------------------------------------------ exact annealing dynamics
 def _hamiltonian_parts(model: BinaryPolynomial, normalise: bool = True):
     from .exact import all_energies
-    diag = all_energies(model)
+    # objects carrying an explicit little-endian diagonal (``.diag``) are accepted too, e.g.
+    # an objective restricted to a feasible set with padded infeasible states (E11)
+    diag = np.asarray(model.diag, float) if hasattr(model, "diag") else all_energies(model)
     if normalise:
         span = diag.max() - diag.min()
         diag = (diag - diag.min()) / (span if span > 0 else 1.0)

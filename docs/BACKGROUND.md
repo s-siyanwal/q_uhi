@@ -200,3 +200,27 @@ Literature note: in a targeted search we did not find prior work that applies qu
 or QAOA specifically to urban green/blue-space placement for heat mitigation. The closest work is
 classical (GA / heuristic) green-space layout optimisation, plus QUBO work on other urban
 location problems. We treat this as a gap, with the caveat of §1.6.
+
+## 6. Constraint-preserving mixers (E8)
+
+Standard QAOA uses the X mixer, which explores all 2ⁿ bitstrings, so every constraint must be
+paid for with slack bits and a penalty Λ. E6 shows the price: the final gap shrinks as 1/Λ, and
+most of the amplitude sits on infeasible or penalty-dominated states. The Quantum Alternating
+Operator Ansatz [Hadfield et al., Algorithms 12, 34 (2019)] instead picks a mixer that preserves
+the feasible subspace. For "exactly k" constraints this is the XY mixer
+Σ(XᵢXⱼ + YᵢYⱼ)/2 started from a Dicke state |Dₙᵏ⟩ [Bärtschi & Eidenbenz, Grover mixers /
+Dicke-state preparation, 2019–2020]. For one-hot groups it is a per-group XY mixer.
+
+`quhi.solvers.mixers.ConstrainedQAOA` implements the general case as a feasibility-projected
+move operator Π_F(Σ moves)Π_F:
+- **swap moves** are XY terms;
+- **add/remove moves** are X terms, kept only when the result is feasible;
+- the **initial state** is uniform over F;
+- the **phase separator** is the native objective (any degree, no slack, no Λ).
+
+For exact cardinality with complete-graph swaps this reproduces the complete XY mixer exactly
+(tested against the explicit 2ⁿ Pauli construction). For knapsack budgets, one-option-per-cell
+and equity constraints, it is the projected (Hadfield-style "controlled") mixer. It is simulated
+exactly in span(F), and is not compiled to gates here.
+
+SQA remains discrete-time PIMC, which is not a model of hardware dynamics [Heim et al. 2015].

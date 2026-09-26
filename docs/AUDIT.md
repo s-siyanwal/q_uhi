@@ -138,3 +138,5 @@ is that the code base mixes the symmetric and upper-triangular conventions for Q
 
 The legacy code is left untouched in `UHIP_Quantum-main.zip` for provenance; nothing
 in `quhi/` imports it.
+
+See [NEXT.md](NEXT.md) for the follow-up experiment plan (E8–E11) and success criterion.

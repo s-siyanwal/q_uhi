@@ -28,6 +28,10 @@ from quhi.analysis import build_instance, run  # noqa: E402
 from quhi.analysis import plotting as qp  # noqa: E402
 from quhi.postprocess import postprocess  # noqa: E402
 from quhi.schedules import suggest_beta_range  # noqa: E402
+from quhi import BinaryPolynomial, ConstrainedBinaryProgram, LinearConstraint  # noqa: E402
+from quhi.solvers import (QAOA, ConstrainedQAOA, FeasibleSA, enumerate_feasible,  # noqa: E402
+                          all_energies)
+from quhi.solvers.quantum import qaoa_state  # noqa: E402
 from quhi.solvers import (QAOA, ExhaustiveSolver, MILPSolver, RandomSampler,  # noqa: E402
                           SimulatedAnnealing, SimulatedQuantumAnnealing, SteepestDescent,
                           TabuSearch, annealing_spectrum, schrodinger_anneal)
@@ -453,8 +457,354 @@ def e7_showcase():
     print(json.dumps(summary, indent=1, default=str))
 
 
+# ----------------------------------------------------------------- E8
+def _true_benefit(prob, X, x_ref):
+    """Benefit ratio on the *exact* saturating physics, relative to the plan x_ref (MILP)."""
+    X = np.atleast_2d(X)
+    f0 = prob.true_objective(np.zeros(prob.n))[0]
+    fr = prob.true_objective(x_ref)[0]
+    return (f0 - prob.true_objective(X)) / (f0 - fr)
+
+
+def _heuristic_row(inst_name, fam, method, cbp, prob, X, E_obj, f_opt, x_milp, wall, extra=None):
+    feas = cbp.is_feasible(X)
+    f = cbp.objective_values(X)
+    ok = feas & (f <= f_opt + 1e-7 * max(1.0, abs(f_opt)))
+    br = np.where(feas, _true_benefit(prob, X, x_milp), 0.0)
+    p = float(ok.mean())
+    return {"instance": inst_name, "family": fam, "method": method, "p_opt": p,
+            "p_feasible": float(feas.mean()), "benefit_true": float(br.mean()),
+            "best_benefit_true": float(br.max()), "wall_time_s": wall,
+            "reads_for_99": (np.inf if p == 0 else (1.0 if p >= 0.99 else np.log(0.01) / np.log(1 - p))),
+            **(extra or {})}
+
+
+def _xmixer_exact(cbp, enc, qaoa_ss, x_milp, prob, f_opt):
+    """Exact P(opt), P(feasible), E[benefit] of an X-mixer penalty-QAOA state."""
+    cost = all_energies(enc.model)
+    mu, sd = cost.mean(), cost.std() or 1.0
+    th = qaoa_ss.info["angles"]
+    p = qaoa_ss.info["p"]
+    psi = qaoa_state((cost - mu) / sd, th[:p], th[p:])
+    pr = np.abs(psi) ** 2
+    pr /= pr.sum()
+    n = enc.model.n
+    Xall = ((np.arange(2 ** n)[:, None] >> np.arange(cbp.n)) & 1).astype(np.int8)
+    feas = cbp.is_feasible(Xall)
+    f = cbp.objective_values(Xall)
+    ok = feas & (f <= f_opt + 1e-7 * max(1.0, abs(f_opt)))
+    br = np.where(feas, _true_benefit(prob, Xall, x_milp), 0.0)
+    return float(pr[ok].sum()), float(pr[feas].sum()), float(pr @ br)
+
+
+def _e8_instances():
+    """(name, family, prob, program).  Park: E6 instance, its exact-cardinality twin, E3 park
+    8x8/10x10.  Mix: 6x6 cities with three intervention types and equity."""
+    out = []
+    c = generate_city(7, 7, seed=4, candidate_fraction=0.6, road_spacing=3)
+    pr = UHIPlanningProblem(c, budget=9)
+    out.append(("park_E6_7x7", "park", pr, pr.program(2)))
+    k = pr.budget // PARK.cost
+    card = ConstrainedBinaryProgram(pr.objective(2), [LinearConstraint({v: 1 for v in range(pr.n)}, "==", k, "cardinality")],
+                                    names=pr.names)
+    out.append((f"park_E6_7x7_exactly{k}", "park-cardinality", pr, card))
+    grids = [8, 10] if not QUICK else [8]
+    for R, si in itertools.product(grids, range(3) if not QUICK else range(1)):
+        c = generate_city(R, R, seed=si, candidate_fraction=0.3)
+        pr = UHIPlanningProblem(c)
+        out.append((f"park_{R}x{R}_s{si}", "park", pr, pr.program(2)))
+    mix_cfg = [(6, 0.6), (7, 0.4)] if not QUICK else [(6, 0.6)]
+    for (R, cf), si in itertools.product(mix_cfg, range(3) if not QUICK else range(1)):
+        c = generate_city(R, R, seed=si, candidate_fraction=cf)
+        pr = UHIPlanningProblem(c, interventions=DEFAULT_MIX, budget=9, min_per_district=1)
+        out.append((f"mix_{R}x{R}_s{si}", "mix+equity", pr, pr.program(2)))
+    return out
+
+
+def e8_mixers():
+    """Constraint-preserving (XY / Dicke / projected) QAOA vs penalty QAOA vs classical baselines."""
+    d = out("E8_mixers")
+    ps = [1, 2] if not QUICK else [1]
+    rows, notes = [], []
+    for name, fam, prob, cbp in _e8_instances():
+        t0 = time.perf_counter()
+        ms = MILPSolver().solve(cbp)
+        t_milp = time.perf_counter() - t0
+        f_opt, x_milp = ms.best_energy, ms.best
+        F = enumerate_feasible(cbp)
+        base = {"n_decision": cbp.n, "n_feasible": len(F)}
+        rows.append(_heuristic_row(name, fam, "MILP (HiGHS)", cbp, prob, x_milp, None, f_opt, x_milp, t_milp, base))
+        t0 = time.perf_counter()
+        g = prob.greedy_plan()
+        rows.append(_heuristic_row(name, fam, "Greedy planner", cbp, prob, g, None, f_opt, x_milp,
+                                   time.perf_counter() - t0, base))
+        # --- constraint-preserving QAOA (native objective, no slack, no penalty)
+        variants = [("XY-QAOA complete (swap+add/remove)", ("swap", "add_remove"), "complete")]
+        if fam == "park-cardinality":
+            variants = [("Dicke-XY complete", ("swap",), "complete"), ("Dicke-XY ring", ("swap",), "ring")]
+        if len(F) > 4000:
+            notes.append(f"{name}: |F|={len(F)} > 4000, constrained-QAOA state vector skipped")
+        else:
+            for label, moves, graph in variants:
+                q0 = ConstrainedQAOA(moves=moves, swap_graph=graph)
+                prep = q0.prepare(cbp, F)
+                for p in ps:
+                    q = ConstrainedQAOA(p=p, moves=moves, swap_graph=graph, shots=256, restarts=1, maxiter=100)
+                    ss = q.sample_program(cbp, seed=0, prep=prep)
+                    pr_ = ss.info["prob"]
+                    br = pr_ @ _true_benefit(prob, F, x_milp)
+                    pp = ss.info["p_opt"]
+                    rows.append({"instance": name, "family": fam, "method": f"{label} p={p}", "p": p,
+                                 "p_opt": pp, "p_feasible": float(cbp.is_feasible(ss.samples).mean()),
+                                 "benefit_true": float(br), "best_benefit_true": float(_true_benefit(prob, ss.samples, x_milp).max()),
+                                 "wall_time_s": ss.wall_time, "p_opt_uniform": ss.info["p_opt_uniform"],
+                                 "mixer_components": ss.info["mixer_components"],
+                                 "reads_for_99": (np.inf if pp == 0 else (1.0 if pp >= 0.99 else np.log(0.01) / np.log(1 - pp))),
+                                 **base})
+        # --- X-mixer penalty QAOA (existing baseline) on the safe-penalty QUBO
+        enc = cbp.to_penalty_model()
+        if enc.model.n <= 16:
+            for p in ps:
+                t0 = time.perf_counter()
+                qs = QAOA(p=p, shots=256).sample(enc.model, seed=0)
+                p_opt, p_feas, br = _xmixer_exact(cbp, enc, qs, x_milp, prob, f_opt)
+                rows.append({"instance": name, "family": fam, "method": f"X-mixer penalty QAOA p={p}", "p": p,
+                             "p_opt": p_opt, "p_feasible": p_feas, "benefit_true": br,
+                             "wall_time_s": time.perf_counter() - t0, "n_qubits": enc.model.n,
+                             "reads_for_99": (np.inf if p_opt == 0 else np.log(0.01) / np.log(1 - p_opt)), **base})
+        else:
+            notes.append(f"{name}: penalty QUBO has {enc.model.n} > 16 qubits, X-mixer QAOA skipped")
+        # --- classical heuristics
+        seeds = range(3) if not QUICK else range(1)
+        sweeps = 1000 if not QUICK else 100
+        for sd in seeds:
+            fs = FeasibleSA(num_sweeps=sweeps, num_reads=32).sample_program(cbp, seed=sd)
+            rows.append(_heuristic_row(name, fam, "FeasibleSA", cbp, prob, fs.samples, None, f_opt, x_milp,
+                                       fs.wall_time, {**base, "seed": sd}))
+            br_ = suggest_beta_range(enc.model, RES)
+            for label, s in (("SA (safe-Λ QUBO)", SimulatedAnnealing(num_sweeps=sweeps, num_reads=32, beta_range=br_)),
+                             ("Tabu (safe-Λ QUBO)", TabuSearch(max_iter=max(2000, 40 * enc.model.n), num_reads=32))):
+                ss = s.sample(enc.model, seed=sd)
+                rows.append(_heuristic_row(name, fam, label, cbp, prob, ss.samples[:, :cbp.n], None, f_opt, x_milp,
+                                           ss.wall_time, {**base, "seed": sd}))
+        print(f"E8 {name}: n={cbp.n} |F|={len(F)} done", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    s = df.groupby(["family", "instance", "method"], sort=False)[
+        ["p_opt", "p_feasible", "benefit_true", "wall_time_s", "reads_for_99"]].mean().reset_index()
+    save(s, d, "summary")
+    fam = df.groupby(["family", "method"], sort=False)[["p_opt", "p_feasible", "benefit_true", "wall_time_s"]].mean().reset_index()
+    save(fam, d, "summary_by_family")
+    (d / "e8.md").write_text("# E8 constraint-preserving mixers\n\n" +
+                             "Per-family means over instances (and 3 seeds for heuristics). "
+                             "QAOA P(opt) is the exact probability of the certified optimum; heuristic P(opt) is per read. "
+                             "benefit_true uses exact saturating physics relative to the MILP plan; infeasible = 0.\n\n" +
+                             fam.round(4).to_markdown(index=False) + "\n\n## Skipped\n\n" +
+                             ("\n".join(f"- {n}" for n in notes) or "- none") + "\n")
+    print(fam.round(4).to_string())
+    print("\n".join(notes))
+
+
+# ----------------------------------------------------------------- E9
+def e9_hybrid():
+    """Declared hybrid recipe: weak penalty (α·Λ_safe) + sampling + repair/feasible local search."""
+    d = out("E9_hybrid")
+    alphas = [0.01, 0.03, 0.1, 1.0] if not QUICK else [0.01, 1.0]
+    seeds = range(2) if not QUICK else range(1)
+    sweeps = 1000 if not QUICK else 100
+    cases = [(R, si) for R in ([8, 10, 12] if not QUICK else [8]) for si in (range(3) if not QUICK else range(1))]
+    rows = []
+    for R, si in cases:
+        city = generate_city(R, R, seed=si, candidate_fraction=0.3)
+        prob = UHIPlanningProblem(city, interventions=DEFAULT_MIX, budget=3 * R // 2 + 3, min_per_district=1)
+        cbp = prob.program(2)
+        t0 = time.perf_counter()
+        try:
+            ms = MILPSolver(time_limit=300).solve(cbp)
+        except RuntimeError as e:
+            print(f"skip mix {R}x{R} s{si}: {e}")
+            continue
+        t_milp = time.perf_counter() - t0
+        name = f"mix_{R}x{R}_s{si}"
+        f_opt, x_milp = ms.best_energy, ms.best
+        meta = {"instance": name, "grid": R, "n_decision": cbp.n, "milp_optimal": ms.info["optimal"]}
+        rows.append({**meta, "solver": "MILP (HiGHS)", "alpha": np.nan, "p_success": 1.0, "p_feasible": 1.0,
+                     "mean_benefit_ratio": 1.0, "wall_time_s": t_milp, "time_per_read_s": t_milp})
+        t0 = time.perf_counter()
+        g = prob.greedy_plan()
+        tg = time.perf_counter() - t0
+        gf = bool(cbp.is_feasible(g)[0])
+        fg = float(cbp.objective_values(g)[0])
+        f0 = float(cbp.objective_values(np.zeros(cbp.n))[0])
+        rows.append({**meta, "solver": "Greedy planner", "alpha": np.nan,
+                     "p_success": float(gf and fg <= f_opt + 1e-7 * abs(f_opt)), "p_feasible": float(gf),
+                     "mean_benefit_ratio": (f0 - fg) / (f0 - f_opt) if gf else 0.0, "wall_time_s": tg,
+                     "time_per_read_s": tg})
+        for sd in seeds:
+            fs = FeasibleSA(num_sweeps=sweeps, num_reads=32).sample_program(cbp, seed=sd)
+            f = cbp.objective_values(fs.samples)
+            ok = f <= f_opt + 1e-7 * abs(f_opt)
+            rows.append({**meta, "solver": "FeasibleSA", "alpha": np.nan, "seed": sd,
+                         "p_success": float(ok.mean()), "p_feasible": 1.0,
+                         "mean_benefit_ratio": float(((f0 - f) / (f0 - f_opt)).mean()),
+                         "wall_time_s": fs.wall_time, "time_per_read_s": fs.wall_time / 32,
+                         "flips_attempted": fs.info["flips_attempted"]})
+        for a in alphas:
+            inst = build_instance(name, cbp, penalty_mult=a, f_opt=f_opt, meta={"grid": R, "alpha": a})
+            suite = solver_suite(inst.model, sweeps=sweeps, reads=32, with_fixed=False, with_matched=True)
+            suite = {k: v for k, v in suite.items() if k in ("SA", "SA-matched", "SQA", "Tabu")}
+            suite["SQA"].num_reads = 16
+            rows += run(inst, suite, seeds, extra={"alpha": a, "milp_optimal": ms.info["optimal"]}, postprocess=True)
+        print(f"E9 {name} n={cbp.n} done", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    cols = ["p_feasible", "p_success", "p_success_pp", "mean_benefit_ratio", "mean_benefit_ratio_pp",
+            "time_per_read_s", "time_per_read_s_pp"]
+    cols = [c for c in cols if c in df.columns]
+    s = df.groupby(["solver", "alpha"], dropna=False)[cols].mean().reset_index()
+    save(s, d, "summary")
+    s2 = df.groupby(["grid", "solver", "alpha"], dropna=False)[cols].mean().reset_index()
+    save(s2, d, "summary_by_size")
+    print(s.round(4).to_string())
+
+
+# ----------------------------------------------------------------- E10
+def e10_penalty_form():
+    """Quadratic slack (exact) vs unbalanced and linear penalties (no slack, not exact)."""
+    d = out("E10_penalty_form")
+    cfgs = [(6, s, (PARK,), None, 0) for s in range(3)] + [(8, s, (PARK,), None, 0) for s in range(3)] + \
+           [(6, s, DEFAULT_MIX, 6, 0) for s in range(2)] + [(8, 1, (PARK,), None, 1)]
+    if QUICK:
+        cfgs = cfgs[:1] + cfgs[6:7]
+    rows = []
+    for R, seed, ivs, budget, eq in cfgs:
+        city = generate_city(R, R, seed=seed, candidate_fraction=0.4)
+        prob = UHIPlanningProblem(city, interventions=ivs, budget=budget, min_per_district=eq)
+        cbp = prob.program(2)
+        name = f"{R}x{R}_s{seed}_{'mix' if len(ivs) > 1 else 'park'}_eq{eq}"
+        try:
+            ms = MILPSolver().solve(cbp)
+        except RuntimeError as e:
+            print(f"skip {name}: {e}")
+            continue
+        f_opt = ms.best_energy
+        f0 = float(cbp.objective_values(np.zeros(cbp.n))[0])
+        safe = cbp.to_penalty_model().penalty_weight
+        lin = np.array([cbp.objective.terms.get((v,), 0.0) for v in range(cbp.n)])
+        budget_c = next(c for c in cbp.constraints if c.name == "budget")
+        cost = np.array([budget_c.coeffs.get(v, 1) for v in range(cbp.n)], dtype=float)
+        mu = float(np.median(-lin / cost))                 # median cooling gain per cost unit
+        phys = max(abs(c) for c in cbp.objective.terms.values())
+        encs = [("quadratic slack (exact)", "Λ_safe", cbp.to_penalty_model())]
+        for b in (0.1, 0.3, 1.0):
+            encs.append(("unbalanced", f"{b}·Λ_safe", cbp.to_penalty_model(penalty_weight=b * safe, form="unbalanced")))
+        for m in (0.5, 1.0, 2.0):
+            encs.append(("linear", f"{m}·μ", cbp.to_penalty_model(penalty_weight=m * mu, form="linear")))
+        for form, weight, enc in encs:
+            model = enc.model
+            row = {"instance": name, "form": form, "weight": weight, "n_vars": model.n,
+                   "dynamic_range": max(abs(c) for c in model.terms.values()) / phys}
+            if model.n <= 24:
+                gs = ExhaustiveSolver().sample(model).best[: cbp.n]
+                row["ground_feasible"] = bool(cbp.is_feasible(gs)[0])
+                row["ground_is_optimum"] = bool(row["ground_feasible"] and
+                                                cbp.objective_values(gs)[0] <= f_opt + 1e-7 * abs(f_opt))
+            br = suggest_beta_range(model, RES)
+            for sd in (range(3) if not QUICK else range(1)):
+                ss = SimulatedAnnealing(num_sweeps=1000 if not QUICK else 100, num_reads=32, beta_range=br).sample(model, seed=sd)
+                Xd = ss.samples[:, : cbp.n]
+                feas = cbp.is_feasible(Xd)
+                f = cbp.objective_values(Xd)
+                Xp = postprocess(cbp, Xd)
+                fp = cbp.objective_values(Xp)
+                okp = cbp.is_feasible(Xp)
+                rows.append({**row, "seed": sd, "p_feasible": float(feas.mean()),
+                             "p_opt": float((feas & (f <= f_opt + 1e-7 * abs(f_opt))).mean()),
+                             "benefit": float(np.where(feas, (f0 - f) / (f0 - f_opt), 0).mean()),
+                             "p_opt_pp": float((okp & (fp <= f_opt + 1e-7 * abs(f_opt))).mean()),
+                             "benefit_pp": float(np.where(okp, (f0 - fp) / (f0 - f_opt), 0).mean())})
+        print(f"E10 {name} done", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    agg = {"n_vars": "mean", "dynamic_range": "median", "p_feasible": "mean", "p_opt": "mean",
+           "benefit": "mean", "p_opt_pp": "mean", "benefit_pp": "mean"}
+    if "ground_feasible" in df:
+        agg.update({"ground_feasible": "mean", "ground_is_optimum": "mean"})
+    s = df.groupby(["form", "weight"], sort=False).agg(agg).reset_index()
+    save(s, d, "summary")
+    print(s.round(4).to_string())
+
+
+# ----------------------------------------------------------------- E11
+def e11_pubo_gap():
+    """Annealing spectra: native cubic HUBO penalty model vs its Rosenberg quadratisation."""
+    d = out("E11_pubo_gap")
+    rows, specs = [], {}
+    cfg = [(6, 0), (6, 1)]
+    for R, seed in cfg:
+        city = generate_city(R, R, seed=seed, candidate_fraction=0.5, road_spacing=3)
+        prob = UHIPlanningProblem(city, budget=6, prune_tol=0)
+        cbp = prob.program(3)
+        f_opt = MILPSolver().solve(cbp).best_energy
+        enc = cbp.to_penalty_model()
+        q = quadratize(enc.model)
+        # (C) native objective restricted to F: infeasible states padded with a documented
+        # offset above max_F f (diagonal simulation only; not a QUBO and not hardware-realisable)
+        n = cbp.n
+        Xall = ((np.arange(2 ** n)[:, None] >> np.arange(n)) & 1).astype(np.int8)
+        feas = cbp.is_feasible(Xall)
+        fv = cbp.objective_values(Xall)
+        pad = fv[feas].max() + (fv[feas].max() - fv[feas].min())
+        diagC = np.where(feas, fv, pad)
+        models = [("A: native cubic HUBO + slack penalty", enc.model, None),
+                  ("B: Rosenberg QUBO of A", q.qubo, None),
+                  ("C: native HUBO, infeasible padded (diagonal only)", None, diagC)]
+        for label, model, diag in models:
+            nq = model.n if model is not None else n
+            if nq > 18:
+                rows.append({"instance": f"{R}x{R}_s{seed}", "model": label, "n_qubits": nq, "skipped": "n>18"})
+                continue
+            s_grid = np.append(np.linspace(0, 0.95, 39 if not QUICK else 11), 1.0)
+            spec = _spectrum_diag(model, diag, s_grid)
+            row = {"instance": f"{R}x{R}_s{seed}", "model": label, "n_qubits": nq, "degree": model.degree if model is not None else cbp.objective.degree,
+                   "min_gap": spec["min_gap"], "s_min_gap": spec["s_min_gap"], "final_gap": float(spec["gap"][-1]),
+                   "interior_min_gap_s_le_0.95": float(spec["gap"][spec["s"] <= 0.95].min()),
+                   "inv_gap2": 1 / spec["min_gap"] ** 2}
+            for T in ([10, 100, 1000] if not QUICK else [10]):
+                row[f"p_ground_T{T}"] = _anneal_diag(model, diag, T)
+            rows.append(row)
+            print(f"E11 {R}x{R}_s{seed} {label}: n={nq} gap={spec['min_gap']:.3g}", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    print(df.round(6).to_string())
+
+
+def _spectrum_diag(model, diag, s_grid):
+    if diag is None:
+        return annealing_spectrum(model, s_grid)
+    n = int(np.log2(len(diag)))
+    return annealing_spectrum(_DiagModel(n, diag), s_grid)
+
+
+def _anneal_diag(model, diag, T):
+    if diag is None:
+        return schrodinger_anneal(model, T, steps=max(400, 2 * T))["p_ground"]
+    n = int(np.log2(len(diag)))
+    return schrodinger_anneal(_DiagModel(n, diag), T, steps=max(400, 2 * T))["p_ground"]
+
+
+class _DiagModel:
+    """Minimal stand-in carrying an explicit diagonal (little-endian) for the exact solvers."""
+
+    def __init__(self, n, diag):
+        self.n = n
+        self.diag = np.asarray(diag, float)
+        self.degree = None
+
+
 EXPS = {"E1": e1_encoding, "E2": e2_fidelity, "E3": e3_scaling, "E4": e4_penalty,
-        "E5": e5_hubo, "E6": e6_quantum, "E7": e7_showcase}
+        "E5": e5_hubo, "E6": e6_quantum, "E7": e7_showcase, "E8": e8_mixers, "E9": e9_hybrid,
+        "E10": e10_penalty_form, "E11": e11_pubo_gap}
 
 
 def main():
@@ -469,8 +819,14 @@ def main():
     ROOT.mkdir(parents=True, exist_ok=True)
     import numba
     import scipy
-    dump({"python": platform.python_version(), "numpy": np.__version__, "scipy": scipy.__version__,
-          "numba": numba.__version__, "platform": platform.platform(), "quick": QUICK}, ROOT / "env.json")
+    envp = ROOT / "env.json"
+    env = json.loads(envp.read_text()) if envp.exists() else {}
+    env.update({"python": platform.python_version(), "numpy": np.__version__, "scipy": scipy.__version__,
+                "numba": numba.__version__, "platform": platform.platform()})
+    env.setdefault("runs", {})
+    for k in a.only:
+        env["runs"][k] = {"quick": QUICK, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    dump(env, envp)
     for k in a.only:
         t0 = time.perf_counter()
         print(f"===== {k}: {EXPS[k].__doc__.strip().splitlines()[0]}", flush=True)

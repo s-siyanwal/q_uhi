@@ -1,0 +1,15 @@
+instance,form,weight,n_vars,dynamic_range,ground_feasible,ground_is_optimum,seed,p_feasible,p_opt,benefit,p_opt_pp,benefit_pp
+6x6_s0_park_eq0,quadratic slack (exact),Λ_safe,8,45.53761644977712,True,True,0,1.0,0.59375,0.8997925469801792,1.0,1.0
+6x6_s0_park_eq0,unbalanced,0.1·Λ_safe,5,4.750507802924196,True,True,0,1.0,1.0,1.0,1.0,1.0
+6x6_s0_park_eq0,unbalanced,0.3·Λ_safe,5,13.814309724447067,True,True,0,1.0,0.9375,0.9882426969758449,1.0,1.0
+6x6_s0_park_eq0,unbalanced,1.0·Λ_safe,5,45.53761644977712,True,True,0,1.0,0.9375,0.9876894605291983,1.0,1.0
+6x6_s0_park_eq0,linear,0.5·μ,5,0.6029102073395861,False,False,0,0.0,0.0,0.0,1.0,1.0
+6x6_s0_park_eq0,linear,1.0·μ,5,0.3417192019695796,True,True,0,1.0,1.0,1.0,1.0,1.0
+6x6_s0_park_eq0,linear,2.0·μ,5,1.1358987872904074,True,False,0,1.0,0.0,0.0,1.0,1.0
+6x6_s0_mix_eq0,quadratic slack (exact),Λ_safe,18,280.3659358562824,True,True,0,1.0,0.09375,0.5941769204883863,0.4375,0.7919583073621583
+6x6_s0_mix_eq0,unbalanced,0.1·Λ_safe,15,28.256699330196383,True,True,0,1.0,0.0625,0.7941129543269109,0.71875,0.914309030553283
+6x6_s0_mix_eq0,unbalanced,0.3·Λ_safe,15,84.28097411377107,True,True,0,1.0,0.0625,0.7391760451755813,0.53125,0.8445889547860094
+6x6_s0_mix_eq0,unbalanced,1.0·Λ_safe,15,280.3659358562824,True,True,0,1.0,0.1875,0.785145728724184,0.625,0.8841438933499244
+6x6_s0_mix_eq0,linear,0.5·μ,15,0.6766437954885639,False,False,0,0.0,0.0,0.0,1.0,1.0
+6x6_s0_mix_eq0,linear,1.0·μ,15,0.47881072691615023,False,False,0,0.0,0.0,0.0,0.0,0.7465196524018195
+6x6_s0_mix_eq0,linear,2.0·μ,15,0.9334307432630551,True,False,0,1.0,0.0,0.6276375253108016,1.0,1.0
