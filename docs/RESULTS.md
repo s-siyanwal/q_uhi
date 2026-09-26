@@ -367,3 +367,100 @@ No quantum or quantum-inspired method reached the success criterion:
   SQA shows no advantage over compute-matched SA.
 - **Mixers help, but not enough.** Constraint-preserving mixers are a real improvement over
   penalty QAOA (10–70×), yet remain well below classical at p ≤ 2.
+
+## E8b: Dicke-XY depth curve (is p ≤ 2 too shallow?)
+`results/E8b_depth/`. Setup:
+- **Instances:** three "exactly 3 parks" cities, each a 7×7 city built like the E6/E8 twin
+  (seeds 4, 5, 6; seed 4 is the E8 instance). Each has n = 10, k = 3, |F| = C(10,3) = 120 and a
+  single certified optimum. No slack.
+- **QAOA:** L-BFGS-B from the linear ramp plus one random restart, maxiter 300. P(opt) is the
+  exact state-vector probability.
+- **FeasibleSA:** as in E8, 1,000 sweeps × 32 reads × 3 seeds.
+- **X-mixer penalty QAOA:** runs at every p, since the penalty QUBO has 10 qubits.
+
+Values are the mean over the 3 cities, with min–max in brackets.
+
+| method | p=1 | p=2 | p=3 | p=4 | p=6 |
+|---|---|---|---|---|---|
+| Dicke-XY complete | 0.134 [0.05–0.18] | 0.242 [0.08–0.37] | 0.309 [0.11–0.47] | 0.376 [0.13–0.56] | **0.427** [0.17–0.65] |
+| Dicke-XY ring | 0.034 | 0.067 | 0.057 | 0.066 | 0.111 [0.02–0.26] |
+| X-mixer penalty QAOA | 0.004 | 0.005 | 0.006 | 0.008 | 0.009 |
+
+Classical references on the same instances:
+
+| method | P(opt) | benefit (exact) | wall s |
+|---|---|---|---|
+| uniform on F | 1/120 = 0.0083 | 0.85 | – |
+| FeasibleSA | **1.000** | 1.000 | 0.21 |
+| Greedy planner | 0.67 (2 of 3) | 1.000 | 0.001 |
+| MILP (HiGHS) | 1 | 1 | 0.32 |
+
+Expected benefit for Dicke-XY complete rises from 0.955 (p=1) to 0.993 (p=6). At p=6, wall time is
+8–15 s per city (2,200–4,200 function evaluations), all in the classical angle optimiser.
+
+- **Depth helps, then flattens.** P(opt) grows roughly logarithmically in p (0.13 → 0.43 from p=1
+  to p=6) and is still below 0.5 on average at p=6. The worst city reaches only 0.17. None of the
+  curves approach FeasibleSA (1.0) or MILP. The p ≤ 2 verdict of E8 stands: going deeper does not
+  close the gap on the smallest instance family we have.
+- **Mixer connectivity matters more than depth.** Ring-XY at p=6 (0.11) is below complete-XY at
+  p=1 (0.13). The ring curve is not monotone in p (0.067 at p=2 against 0.057 at p=3; one city drops to 1e-5 at p=3), a sign that
+  one random restart does not reliably find the global angle optimum. The restart count was not
+  reduced from E8.
+- **The penalty X-mixer barely beats uniform.** At p=6 it puts 0.9991 of its mass on feasible
+  strings, but P(opt) is 0.0086, essentially uniform over F (1/120 = 0.0083). Its dynamics learn
+  the constraint, not the objective. The E6 finding (penalty gap ∝ 1/Λ) is the reason.
+- **Greedy misses the surrogate optimum on one city (s6), yet its exact-physics benefit is 1.001.**
+  Greedy optimises the exact saturating objective, while the certified optimum is for the K=2
+  surrogate. This shows the surrogate's truncation error (E2), not a greedy failure.
+- **ConstrainedQAOA is still a simulation.** It runs exactly in span(F); it is not a compiled gate
+  circuit (docs/BACKGROUND.md §6).
+
+## Animations
+`results/ANIM/` holds the GIFs and `manifest.json` (instance, n, frame count, fps and the fixed
+colour scales). Regenerate with `python scripts/run_experiments.py --only ANIM`, which takes about
+5 minutes. Settings: at most 40 frames per GIF at 10 fps, width ≤ 1,400 px, 8.1 MB in total.
+
+There are two showcases:
+- **A:** the E8b seed-4 "exactly 3 parks" city (n = 10, |F| = 120).
+- **B:** the E9 10×10 mix+equity city, seed 0 (n = 39, three intervention types, budget 18,
+  equity on).
+
+Every frame's header gives the method, the step, the model energy, the exact-physics exposure
+temperature, spend/budget and whether the plan is feasible. Each temperature scale is fixed to the
+instance's baseline T_min–T_max for all of its GIFs, and each cooling scale is fixed to the largest
+ΔT any recorded plan reaches. Every map is computed from a real plan x.
+
+**Each method lives in a different space, and the GIFs do not pretend otherwise.**
+- **ConstrainedQAOA** is a probability distribution over the feasible set F. Its
+  `search_dicke_xy_complete_*` GIFs show |ψ|² over F, sorted cheapest → hottest, with the certified
+  optimum in green. They start from the Dicke (uniform-on-F) state and step through the L-BFGS-B
+  iterates of the p=6 circuit, reaching P(opt) = 0.65. Most of the remaining mass (0.31) sits on the
+  second-best plan. A companion `search_dicke_xy_complete_layers_*` GIF shows the state after each
+  of the 6 layers, using the optimised angles.
+- **X-mixer penalty QAOA** is a distribution over all 2¹⁰ bitstrings, sorted by f+ΛP.
+  `search_xmixer_penalty_qaoa_*` shows mass leaving infeasible strings (red) until P(feasible)
+  reaches 0.999, while P(opt) stays at uniform-over-F level.
+- **SA, Tabu and SQA** are single trajectories on the penalty QUBO, so their y-axes read f+ΛP.
+  FeasibleSA walks on feasible plans only, so its y-axis reads constrained f(x). The two energy
+  scales are not comparable.
+- **Recording method.** FeasibleSA and SA incumbents are snapshotted by running one geometric β
+  schedule as 40 consecutive pieces, each continuing from the previous piece's state. The solver API
+  is unchanged.
+- **Tabu and SQA** show their real energy traces, but the grid panel holds the final plan, because
+  intermediate states are not recorded. SQA Trotter slices are never drawn as maps.
+
+**Physical space.** In the `uhi_*` GIFs, each frame has three panels: land use with the plan,
+the air-temperature field, and the cooling ΔT. The first frame is always the MILP reference. The
+Dicke-XY UHI GIFs show successive draws from the final |ψ|², labelled as such, not as annealing
+time. The E9 hybrid GIF ends with the plan after repair and feasible local search.
+
+**Comparison.** `compare_temp_*` is the figure to watch: greedy | FeasibleSA | Dicke-XY p=6 |
+MILP, each column on the same locked temperature scale and resampled to 40 frames.
+- **Showcase A:** all four columns end on the same plan (T = 29.571 °C). The QAOA column keeps
+  flickering to other plans, because its draws still miss the optimum 35% of the time.
+- **Showcase B:** |F| > 4,000, so the QAOA column is replaced by the E9 hybrid (SA-matched
+  α=0.01 + repair), and the frame title says so. The greedy column ends **infeasible**, because
+  greedy does not target equity.
+
+Stills for a paper: `compare_final.png` (A; the QAOA panel shows the most probable plan) and
+`compare_final_B_mix_10x10_s0.png`.

@@ -256,11 +256,13 @@ class UHIPlanningProblem:
                 g[i] = o
         return g.reshape(self.city.shape)
 
-    def greedy_plan(self) -> np.ndarray:
+    def greedy_plan(self, return_steps: bool = False):
         """Planner's baseline: repeatedly add the (cell, option) with the best exact
         marginal exposure reduction per unit cost that keeps the plan feasible
-        (budget, one option per cell).  Equity constraints are not targeted."""
+        (budget, one option per cell).  Equity constraints are not targeted.
+        With ``return_steps`` also return the plan after each accepted addition."""
         x = np.zeros(self.n, dtype=np.int8)
+        steps = [x.copy()]
         spent = 0
         used = set()
         f = self.true_objective(x)[0]
@@ -276,11 +278,12 @@ class UHIPlanningProblem:
                 if ratio > best_ratio:
                     best, best_ratio, best_f = v, ratio, fv
             if best is None:
-                return x
+                return (x, steps) if return_steps else x
             x[best] = 1
             spent += self.costs[best]
             used.add(self.variables[best][0])
             f = best_f
+            steps.append(x.copy())
 
     def report(self, x: np.ndarray) -> dict:
         x = np.asarray(x)[: self.n]

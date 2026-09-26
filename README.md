@@ -25,6 +25,7 @@ pip install -e .[dev]          # numpy, scipy (HiGHS MILP), numba, matplotlib, p
 pytest                         # 108 tests, ~20 s
 python examples/quickstart.py  # end-to-end demo, ~1 min, writes examples/output/*.png
 python scripts/run_experiments.py [--only E3] [--quick]   # regenerate results/
+python scripts/run_experiments.py --only ANIM             # GIFs in results/ANIM/ (Pillow)
 python scripts/audit_legacy.py                           # reproduce the audit of the legacy code
 ```
 

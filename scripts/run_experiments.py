@@ -605,6 +605,343 @@ def e8_mixers():
     print("\n".join(notes))
 
 
+# ----------------------------------------------------------------- E8b
+E8B_SEEDS = (4, 5, 6)          # seed 4 is the E6/E8 instance; 5, 6 are built the same way
+
+
+def _cardinality_twin(seed):
+    """E6-style 7x7 park city with 'exactly k parks' (k = budget // cost): equality, no slack."""
+    c = generate_city(7, 7, seed=seed, candidate_fraction=0.6, road_spacing=3)
+    pr = UHIPlanningProblem(c, budget=9)
+    k = pr.budget // PARK.cost
+    cbp = ConstrainedBinaryProgram(pr.objective(2), [LinearConstraint({v: 1 for v in range(pr.n)}, "==", k,
+                                                                      "cardinality")], names=pr.names)
+    return f"park_7x7_s{seed}_exactly{k}", pr, cbp, k
+
+
+def e8b_depth():
+    """Dicke-XY depth curve (p = 1..6) on the exactly-k park instances vs classical references."""
+    d = out("E8b_depth")
+    ps = [1, 2, 3, 4, 6] if not QUICK else [1, 2]
+    seeds = E8B_SEEDS if not QUICK else E8B_SEEDS[:1]
+    rows, notes = [], []
+    for s in seeds:
+        name, prob, cbp, k = _cardinality_twin(s)
+        t0 = time.perf_counter()
+        ms = MILPSolver().solve(cbp)
+        t_milp = time.perf_counter() - t0
+        f_opt, x_milp = ms.best_energy, ms.best
+        F = enumerate_feasible(cbp)
+        cF = cbp.objective_values(F)
+        n_opt = int((cF <= f_opt + 1e-7 * max(1.0, abs(f_opt))).sum())
+        base = {"instance": name, "city_seed": s, "n": cbp.n, "k": k, "n_feasible": len(F), "n_optima": n_opt}
+        rows.append({**_heuristic_row(name, "park-cardinality", "MILP (HiGHS)", cbp, prob, x_milp, None, f_opt,
+                                      x_milp, t_milp), **base})
+        t0 = time.perf_counter()
+        g = prob.greedy_plan()
+        rows.append({**_heuristic_row(name, "park-cardinality", "Greedy planner", cbp, prob, g, None, f_opt, x_milp,
+                                      time.perf_counter() - t0), **base})
+        rows.append({**base, "method": "uniform on F", "p_opt": n_opt / len(F), "p_feasible": 1.0,
+                     "benefit_true": float(_true_benefit(prob, F, x_milp).mean()), "wall_time_s": 0.0})
+        for sd in range(3):
+            fs = FeasibleSA(num_sweeps=1000 if not QUICK else 100, num_reads=32).sample_program(cbp, seed=sd)
+            rows.append({**_heuristic_row(name, "park-cardinality", "FeasibleSA", cbp, prob, fs.samples, None, f_opt,
+                                          x_milp, fs.wall_time), **base, "seed": sd})
+        bF = _true_benefit(prob, F, x_milp)
+        for label, graph in (("Dicke-XY complete", "complete"), ("Dicke-XY ring", "ring")):
+            prep = ConstrainedQAOA(moves=("swap",), swap_graph=graph).prepare(cbp, F)
+            for p in ps:
+                q = ConstrainedQAOA(p=p, moves=("swap",), swap_graph=graph, shots=256, restarts=1, maxiter=300)
+                ss = q.sample_program(cbp, seed=0, prep=prep)
+                rows.append({**base, "method": label, "p": p, "p_opt": ss.info["p_opt"], "p_feasible": 1.0,
+                             "benefit_true": float(ss.info["prob"] @ bF), "wall_time_s": ss.wall_time,
+                             "nfev": ss.info["nfev"], "mixer_components": ss.info["mixer_components"],
+                             "angles": json.dumps(np.round(ss.info["angles"], 6).tolist())})
+        enc = cbp.to_penalty_model()
+        if enc.model.n <= 16:
+            for p in ps:
+                t0 = time.perf_counter()
+                qs = QAOA(p=p, shots=256).sample(enc.model, seed=0)
+                p_opt, p_feas, br = _xmixer_exact(cbp, enc, qs, x_milp, prob, f_opt)
+                rows.append({**base, "method": "X-mixer penalty QAOA", "p": p, "p_opt": p_opt, "p_feasible": p_feas,
+                             "benefit_true": br, "wall_time_s": time.perf_counter() - t0, "n_qubits": enc.model.n})
+        else:
+            notes.append(f"{name}: penalty QUBO has {enc.model.n} > 16 qubits, X-mixer QAOA skipped")
+        print(f"E8b {name}: n={cbp.n} k={k} |F|={len(F)} optima={n_opt} done", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    df["p"] = df.get("p", np.nan)
+    s = df.groupby(["method", "p"], dropna=False, sort=False)[
+        ["p_opt", "p_feasible", "benefit_true", "wall_time_s"]].agg(["mean", "min", "max"]).reset_index()
+    s.columns = ["_".join(c).rstrip("_") for c in s.columns]
+    save(s, d, "summary")
+    _plot_e8b(df, d / "p_opt_vs_p.png")
+    (d / "e8b.md").write_text(
+        "# E8b Dicke-XY depth curve\n\n"
+        f"Exactly-k park instances (7x7 cities, seeds {', '.join(map(str, seeds))}; n = {df['n'].iloc[0]}, "
+        f"k = {df['k'].iloc[0]}, |F| = C(n,k) = {df['n_feasible'].iloc[0]}). QAOA values are exact probabilities "
+        "from the state vector (L-BFGS-B, linear-ramp start + 1 random restart, maxiter 300). Heuristic P(opt) is "
+        "per read (3 seeds x 32 reads). benefit_true = exact saturating physics relative to the MILP plan. "
+        "Mean / min / max over city seeds.\n\n" + s.round(4).to_markdown(index=False) +
+        "\n\n## Skipped\n\n" + ("\n".join(f"- {n}" for n in notes) or "- none") + "\n")
+    print(s.round(4).to_string())
+
+
+def _plot_e8b(df, path):
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(6.8, 4.3))
+    colors = {"Dicke-XY complete": "#1f77b4", "Dicke-XY ring": "#ff7f0e", "X-mixer penalty QAOA": "#7f7f7f"}
+    for m, col in colors.items():
+        g = df[df.method == m]
+        if g.empty:
+            continue
+        for _, gi in g.groupby("instance"):
+            ax.plot(gi.p, gi.p_opt, color=col, alpha=0.25, lw=0.8)
+        mean = g.groupby("p").p_opt.mean()
+        ax.plot(mean.index, mean.values, "o-", color=col, label=m)
+    refs = {"MILP (HiGHS)": ("k", "-"), "Greedy planner": ("#2ca02c", "--"), "FeasibleSA": ("#9467bd", "-."),
+            "uniform on F": ("#8c564b", ":")}
+    for m, (col, ls) in refs.items():
+        v = df[df.method == m].p_opt.mean()
+        ax.axhline(v, color=col, ls=ls, lw=1.2, label=f"{m} ({v:.3g})")
+    ax.set_yscale("log")
+    ax.set_xlabel("QAOA depth p")
+    ax.set_ylabel("P(certified optimum)")
+    ax.set_title("E8b: exactly-3 parks, mean over 3 cities (thin: per city)")
+    ax.legend(fontsize=7, loc="lower right")
+    ax.grid(alpha=0.3, which="both")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+# ----------------------------------------------------------------- ANIM
+def _chunked_run(make, run_chunk, X0, total, n_chunks, b0, b1):
+    """Run an annealer as ``n_chunks`` consecutive pieces of one geometric β schedule, carrying
+    each read's state forward, to snapshot incumbents without changing the solver API.
+    Returns per-chunk snapshots (n_chunks, R, n), the concatenated best-so-far trace (R, S)
+    and the chunk end indices."""
+    edges = np.geomspace(b0, b1, n_chunks + 1)
+    per = max(1, total // n_chunks)
+    X, snaps, trs, ends = X0, [], [], []
+    for i in range(n_chunks):
+        ss = run_chunk(make(per, (edges[i], edges[i + 1])), X, i)
+        X = ss.samples
+        snaps.append(X.copy())
+        trs.append(np.atleast_2d(ss.info["traces"]))
+        ends.append(sum(t.shape[1] for t in trs) - 1)
+    tr = np.minimum.accumulate(np.concatenate(trs, axis=1), axis=1)
+    return np.array(snaps), tr, ends
+
+
+def _anim_showcases():
+    name_a, prob_a, cbp_a, _ = _cardinality_twin(E8B_SEEDS[0])
+    R = 10 if not QUICK else 8
+    city = generate_city(R, R, seed=0, candidate_fraction=0.3)
+    prob_b = UHIPlanningProblem(city, interventions=DEFAULT_MIX, budget=3 * R // 2 + 3, min_per_district=1)
+    return [("A_" + name_a, prob_a, cbp_a), (f"B_mix_{R}x{R}_s0", prob_b, prob_b.program(2))]
+
+
+def e_anim():
+    """Animated search-space and temperature-field comparisons (GIFs) on two showcase instances."""
+    from scipy.optimize import minimize
+
+    from quhi.analysis import animate as an
+
+    d = out("ANIM")
+    NF = 40 if not QUICK else 8
+    FPS = 10
+    sweeps = 1000 if not QUICK else 100
+    manifest = {"frames_max": NF, "fps": FPS, "gifs": {}, "notes": []}
+
+    def gif(frames, fname, meta):
+        info = an.write_gif(frames, d / fname, fps=FPS)
+        manifest["gifs"][fname] = {**meta, **info}
+        print(f"  {fname}: {info['frames']} frames, {info['bytes'] / 1e6:.2f} MB", flush=True)
+
+    for inst, prob, cbp in _anim_showcases():
+        ms = MILPSolver(time_limit=300).solve(cbp)
+        f_opt, x_milp = ms.best_energy, ms.best
+        T0 = prob.temperature_field(None)
+        vmin, vmax = float(T0.min()), float(T0.max())
+        meta0 = {"instance": inst, "n": cbp.n, "vmin_C": vmin, "vmax_C": vmax}
+        plans = {}                                            # method -> list of (x, step, energy)
+
+        # --- greedy planner: one frame per accepted cell
+        _, steps = prob.greedy_plan(return_steps=True)
+        plans["Greedy planner"] = [(x, f"step {i}/{len(steps) - 1}", float(cbp.objective_values(x)[0]))
+                                   for i, x in enumerate(steps)]
+
+        # --- FeasibleSA, incumbents snapshotted every sweeps/NF sweeps
+        rng = np.random.default_rng(0)
+        fsa = FeasibleSA(num_sweeps=sweeps, num_reads=8)
+        b0, b1 = suggest_beta_range(cbp.objective, RES)
+        snaps, tr, ends = _chunked_run(
+            lambda s, br: FeasibleSA(num_sweeps=s, num_reads=8, beta_range=br),
+            lambda solver, X, i: solver.sample_program(cbp, seed=100 + i, x0=X),
+            fsa.feasible_starts(cbp, rng), sweeps, NF, b0, b1)
+        r = int(np.argmin(cbp.objective_values(snaps[-1])))
+        plans["FeasibleSA"] = [(snaps[i][r], f"sweep {ends[i] + 1}/{tr.shape[1]}",
+                                float(cbp.objective_values(snaps[i][r])[0])) for i in range(len(ends))]
+        search = {"FeasibleSA": (tr[r], ends, [snaps[i][r] for i in range(len(ends))], "constrained f(x)", "")}
+
+        # --- E9 hybrid: SA-matched on the α = 0.01 penalty QUBO, then repair + local search
+        safe = cbp.to_penalty_model()
+        enc = cbp.to_penalty_model(penalty_weight=0.01 * safe.penalty_weight)
+        lam = enc.penalty_weight
+        br = suggest_beta_range(enc.model, RES)
+        m_sweeps = sweeps * 17
+        X0 = np.random.default_rng(1).integers(0, 2, (8, enc.model.n)).astype(np.int8)
+        snaps, tr, ends = _chunked_run(
+            lambda s, b: SimulatedAnnealing(num_sweeps=s, num_reads=8, beta_range=b),
+            lambda solver, X, i: solver.sample(enc.model, seed=200 + i, x0=X), X0, m_sweeps, NF, *br)
+        r = int(np.argmin(enc.model.energies(snaps[-1])))
+        lab = "SA-matched α=0.01 + repair"
+        hy = [(snaps[i][r][: cbp.n], f"sweep {ends[i] + 1}/{tr.shape[1]} (raw sample)",
+               float(enc.model.energies(snaps[i][r])[0])) for i in range(len(ends))]
+        xpp = postprocess(cbp, snaps[-1][r][: cbp.n])[0]
+        hy.append((xpp, "after repair + feasible local search", float(cbp.objective_values(xpp)[0])))
+        plans[lab] = hy
+        search["SA α=0.01 (penalty QUBO)"] = (tr[r], ends, [s[r] for s in snaps], f"f+ΛP, Λ={lam:.3g}", "")
+
+        # --- Tabu and SQA on the same QUBO: energy traces only, final plan shown
+        for label, s in (("Tabu α=0.01 (penalty QUBO)", TabuSearch(max_iter=max(2000, 40 * enc.model.n), num_reads=8)),
+                         ("SQA α=0.01 (penalty QUBO, PIMC)",
+                          SimulatedQuantumAnnealing(num_sweeps=sweeps, num_reads=8, trotter_slices=16, beta_range=br,
+                                                    gamma_range=(0.3, 1e-6)))):
+            ss = s.sample(enc.model, seed=0)
+            r = int(np.argmin(ss.energies))
+            t = np.minimum.accumulate(np.atleast_2d(ss.info["traces"])[r])
+            idx = list(an.frame_indices(len(t), NF))
+            search[label] = (t, idx, [ss.samples[r]] * len(idx), f"f+ΛP, Λ={lam:.3g}",
+                             "final plan (intermediate states not snapshotted)")
+
+        for label, (t, idx, xs, ylab, note) in search.items():
+            frames = [an.trace_frame(prob, cbp, t, k, x, label, f"iteration {k + 1}/{len(t)}", ylab,
+                                     f_opt if ylab.startswith("constrained") else None, note)
+                      for k, x in zip(idx, xs)][:NF]
+            gif(frames, f"search_{_slug(label)}_{inst}.gif", {**meta0, "method": label, "energy_axis": ylab})
+
+        # --- constraint-preserving QAOA (only if |F| fits)
+        try:
+            F = enumerate_feasible(cbp, max_states=4000)
+        except ValueError:
+            F = None
+        if F is None or len(F) > 4000:
+            manifest["notes"].append(f"{inst}: |F| > 4000, ConstrainedQAOA state vector not simulated; "
+                                     "the QAOA cell of the comparison uses the E9 hybrid instead")
+        else:
+            moves = ("swap",) if len(cbp.constraints) == 1 and cbp.constraints[0].sense == "==" else ("swap", "add_remove")
+            qlab = "Dicke-XY complete" if moves == ("swap",) else "XY-QAOA complete"
+            prep = ConstrainedQAOA(moves=moves).prepare(cbp, F)
+            cF = prep["cost"]
+            opt = cF <= f_opt + 1e-7 * max(1.0, abs(f_opt))
+            cs = (cF - cF.mean()) / (cF.std() or 1.0)
+            P = 6 if not QUICK else 2
+            k = (np.arange(P) + 0.5) / P
+            th0 = np.concatenate([0.75 * k, 0.75 * (1 - k)])
+            its = [th0.copy()]
+            ev = lambda th: float(np.real(np.vdot(s_ := ConstrainedQAOA.state(prep, th[:P], th[P:]), cs * s_)))
+            th = minimize(ev, th0, method="L-BFGS-B", callback=lambda v: its.append(v.copy()),
+                          options={"maxiter": 300}).x
+            states = [np.full(len(F), 1 / len(F))] + \
+                     [np.abs(ConstrainedQAOA.state(prep, t_[:P], t_[P:])) ** 2 for t_ in its]
+            ymax = max(float(s_.max()) for s_ in states) * 1.05
+            hdr = lambda pr, step: (f"{qlab} p={P}  |  {step}   E[f] = {pr @ cF:.4f} °C\n"
+                                    f"P(opt) = {pr[opt].sum():.3f}   |F| = {len(F)}   feasible: yes (by construction)")
+            frames = [an.distribution_frame(cF, pr, opt, "probability mass on feasible plans, cheapest → hottest",
+                                            hdr(pr, "Dicke/uniform start" if i == 0 else f"L-BFGS-B iterate {i}/{len(states) - 1}"),
+                                            ylim=ymax)
+                      for i, pr in ((i, states[i]) for i in an.frame_indices(len(states), NF))]
+            gif(frames, f"search_{_slug(qlab)}_p{P}_{inst}.gif", {**meta0, "method": f"{qlab} p={P}",
+                                                                  "n_feasible": len(F)})
+            layers = [np.full(len(F), 1 / len(F))] + \
+                     [np.abs(ConstrainedQAOA.state(prep, th[:l], th[P:P + l])) ** 2 for l in range(1, P + 1)]
+            frames = [an.distribution_frame(cF, pr, opt, "probability mass on feasible plans, cheapest → hottest",
+                                            hdr(pr, f"after layer {l}/{P} (optimised angles)"),
+                                            ylim=max(s_.max() for s_ in layers) * 1.05)
+                      for l, pr in enumerate(layers)]
+            gif(frames, f"search_{_slug(qlab)}_layers_{inst}.gif", {**meta0, "method": f"{qlab} p={P} layers"})
+            prob_final = states[-1] / states[-1].sum()
+            # UHI view: draws from the final |ψ|² (p=2 as in E8) and the p=max state for the comparison
+            q2 = ConstrainedQAOA(p=2, moves=moves, shots=NF, restarts=1, maxiter=300).sample_program(cbp, seed=0, prep=prep)
+            plans[f"{qlab} p=2"] = [(x, f"draw {i + 1}/{NF} from final |ψ|² (not annealing time)",
+                                     float(cbp.objective_values(x)[0])) for i, x in enumerate(q2.samples)]
+            draws = np.random.default_rng(0).choice(len(F), size=NF, p=prob_final)
+            plans[f"{qlab} p={P}"] = [(F[j], f"draw {i + 1}/{NF} from final |ψ|²", float(cF[j]))
+                                      for i, j in enumerate(draws)]
+            manifest["gifs"][f"search_{_slug(qlab)}_p{P}_{inst}.gif"]["p_opt_final"] = float(prob_final[opt].sum())
+
+            # --- X-mixer penalty QAOA over the full 2^n diagonal (safe Λ), n <= 16 only
+            if safe.model.n <= 16:
+                cost = all_energies(safe.model)
+                csx = (cost - cost.mean()) / (cost.std() or 1.0)
+                nq = safe.model.n
+                Xall = ((np.arange(2 ** nq)[:, None] >> np.arange(nq)) & 1).astype(np.int8)
+                fe = cbp.is_feasible(Xall[:, : cbp.n])
+                opx = fe & (cbp.objective_values(Xall[:, : cbp.n]) <= f_opt + 1e-7 * max(1.0, abs(f_opt)))
+                its = [th0.copy()]
+                evx = lambda t_: float(np.real(np.vdot(s_ := qaoa_state(csx, t_[:P], t_[P:]), csx * s_)))
+                minimize(evx, th0, method="L-BFGS-B", callback=lambda v: its.append(v.copy()), options={"maxiter": 300})
+                sts = [np.abs(qaoa_state(csx, t_[:P], t_[P:])) ** 2 for t_ in its]
+                ymax = max(float(s_.max()) for s_ in sts) * 1.05
+                frames = [an.distribution_frame(
+                    cost, pr, opx, "all 2^n bitstrings sorted by penalised energy f+ΛP (safe Λ)",
+                    f"X-mixer penalty QAOA p={P}  |  L-BFGS-B iterate {i}/{len(sts) - 1}\n"
+                    f"P(opt) = {pr[opx].sum():.4f}   P(feasible) = {pr[fe].sum():.3f}   n = {nq} qubits",
+                    feasible=fe, ylim=ymax, xlabel="bitstrings sorted by f+ΛP (low → high)")
+                    for i, pr in ((i, sts[i]) for i in an.frame_indices(len(sts), NF))]
+                gif(frames, f"search_xmixer_penalty_qaoa_p{P}_{inst}.gif", {**meta0, "method": f"X-mixer QAOA p={P}"})
+            else:
+                manifest["notes"].append(f"{inst}: penalty QUBO has {safe.model.n} > 16 qubits, X-mixer QAOA not animated")
+
+        # --- UHI (physical-space) GIFs on one cooling scale per instance
+        allx = [x for v in plans.values() for x, _, _ in v] + [x_milp]
+        dtmax = float(max((T0 - prob.temperature_field(x)).max() for x in allx))
+        meta0["dtmax_C"] = dtmax
+        milp_lab = "MILP (HiGHS)"
+        for label, seq in plans.items():
+            eax = f"f+ΛP (Λ={lam:.3g})" if label.startswith("SA-matched") else "constrained f(x)"
+            frames = [an.uhi_frame(prob, cbp, x_milp, milp_lab, "certified optimum (reference)", f_opt,
+                                   vmin, vmax, dtmax, "constrained f(x)")]
+            frames += [an.uhi_frame(prob, cbp, x, label, step, e, vmin, vmax, dtmax,
+                                    "constrained f(x)" if "after repair" in step else eax)
+                       for x, step, e in (seq[i] for i in an.frame_indices(len(seq), NF - 1))]
+            gif(frames, f"uhi_{_slug(label)}_{inst}.gif", {**meta0, "method": label})
+
+        # --- side-by-side comparison
+        qkey = next((k for k in plans if k.endswith("p=6") or (QUICK and k.endswith("p=2") and "XY" in k)), None)
+        third = qkey or lab
+        cols = ["Greedy planner", "FeasibleSA", third]
+        frames = []
+        for t in range(NF):
+            cells = {}
+            for c in cols:
+                seq = plans[c]
+                x, step, _ = seq[min(len(seq) - 1, int(round(t * (len(seq) - 1) / (NF - 1))))]
+                cells[c] = (x, step)
+            cells[milp_lab] = (x_milp, "certified optimum (static)")
+            frames.append(an.compare_frame(prob, cbp, cells, vmin, vmax,
+                                           f"{inst}: locked temperature scale {vmin:.2f}–{vmax:.2f} °C" +
+                                           ("" if qkey else "  (XY-QAOA does not fit: |F| > 4000; E9 hybrid shown)")))
+        gif(frames, f"compare_temp_{inst}.gif", {**meta0, "columns": cols + [milp_lab]})
+        finals = {c: plans[c][-1][0] for c in cols}
+        if qkey:   # most probable plan for QAOA in the still
+            finals[third] = F[int(np.argmax(prob_final))]
+        finals[milp_lab] = x_milp
+        png = "compare_final.png" if inst.startswith("A_") else f"compare_final_{inst}.png"
+        qp.plot_plan_transition(prob, finals, d / png, f"{inst}: final plans" +
+                                (" (QAOA: most probable plan of |ψ|²)" if qkey else ""))
+        manifest.setdefault("instances", {})[inst] = {**meta0, "f_opt": f_opt,
+                                                      "milp_exposure_T": float(prob.true_objective(x_milp)[0])}
+    dump(manifest, d / "manifest.json")
+
+
+def _slug(s):
+    import re
+    return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
+
+
 # ----------------------------------------------------------------- E9
 def e9_hybrid():
     """Declared hybrid recipe: weak penalty (α·Λ_safe) + sampling + repair/feasible local search."""
@@ -803,8 +1140,8 @@ class _DiagModel:
 
 
 EXPS = {"E1": e1_encoding, "E2": e2_fidelity, "E3": e3_scaling, "E4": e4_penalty,
-        "E5": e5_hubo, "E6": e6_quantum, "E7": e7_showcase, "E8": e8_mixers, "E9": e9_hybrid,
-        "E10": e10_penalty_form, "E11": e11_pubo_gap}
+        "E5": e5_hubo, "E6": e6_quantum, "E7": e7_showcase, "E8": e8_mixers, "E8b": e8b_depth, "E9": e9_hybrid,
+        "E10": e10_penalty_form, "E11": e11_pubo_gap, "ANIM": e_anim}
 
 
 def main():
