@@ -1,0 +1,100 @@
+{
+  "n_decision": 81,
+  "n_total_qubo": 105,
+  "budget": 24,
+  "milp_time_s": 10.819989574998544,
+  "milp_optimal": true,
+  "milp_obj": 31.168036162116245,
+  "solvers": {
+    "SA": {
+      "time_s": 12.418024511000112,
+      "best_obj": 31.248929640291504,
+      "gap_to_milp_C": 0.08089347817525905,
+      "p_reach_milp": 0.0
+    },
+    "SQA": {
+      "time_s": 32.13574645799963,
+      "best_obj": 31.248929640291504,
+      "gap_to_milp_C": 0.08089347817525905,
+      "p_reach_milp": 0.0
+    },
+    "Tabu": {
+      "time_s": 10.840888497999913,
+      "best_obj": 31.464436788669733,
+      "gap_to_milp_C": 0.2964006265534884,
+      "p_reach_milp": 0.0
+    }
+  },
+  "plans": {
+    "Greedy planner (no equity)": {
+      "n_interventions": 8,
+      "spend": 24,
+      "budget": 24,
+      "exposure_temp_C": 31.140748046807538,
+      "exposure_temp_baseline_C": 32.310703549113,
+      "mean_cooling_C": 1.0265505814248028,
+      "max_cooling_C": 2.1415343696470046,
+      "pop_weighted_cooling_C": 1.2314147541114626,
+      "hot_cells_baseline": 20,
+      "hot_cells_after": 0,
+      "feasible": true,
+      "objective_qubo_C": 31.168036162116245
+    },
+    "SA + post-processing": {
+      "n_interventions": 10,
+      "spend": 24,
+      "budget": 24,
+      "exposure_temp_C": 31.229623580416742,
+      "exposure_temp_baseline_C": 32.310703549113,
+      "mean_cooling_C": 0.9437679636290776,
+      "max_cooling_C": 2.133853526024012,
+      "pop_weighted_cooling_C": 1.1399279708679084,
+      "hot_cells_baseline": 20,
+      "hot_cells_after": 0,
+      "feasible": true,
+      "objective_qubo_C": 31.248929640291504
+    },
+    "SQA + post-processing": {
+      "n_interventions": 10,
+      "spend": 24,
+      "budget": 24,
+      "exposure_temp_C": 31.229623580416742,
+      "exposure_temp_baseline_C": 32.310703549113,
+      "mean_cooling_C": 0.9437679636290776,
+      "max_cooling_C": 2.133853526024012,
+      "pop_weighted_cooling_C": 1.1399279708679084,
+      "hot_cells_baseline": 20,
+      "hot_cells_after": 0,
+      "feasible": true,
+      "objective_qubo_C": 31.248929640291504
+    },
+    "Tabu + post-processing": {
+      "n_interventions": 14,
+      "spend": 24,
+      "budget": 24,
+      "exposure_temp_C": 31.458867837921236,
+      "exposure_temp_baseline_C": 32.310703549113,
+      "mean_cooling_C": 0.7604669690622724,
+      "max_cooling_C": 1.8954492263578047,
+      "pop_weighted_cooling_C": 0.8909937435329742,
+      "hot_cells_baseline": 20,
+      "hot_cells_after": 0,
+      "feasible": true,
+      "objective_qubo_C": 31.464436788669733
+    },
+    "MILP (optimal)": {
+      "n_interventions": 8,
+      "spend": 24,
+      "budget": 24,
+      "exposure_temp_C": 31.140748046807538,
+      "exposure_temp_baseline_C": 32.310703549113,
+      "mean_cooling_C": 1.0265505814248028,
+      "max_cooling_C": 2.1415343696470046,
+      "pop_weighted_cooling_C": 1.2314147541114626,
+      "hot_cells_baseline": 20,
+      "hot_cells_after": 0,
+      "feasible": true,
+      "objective_qubo_C": 31.168036162116245
+    }
+  }
+}

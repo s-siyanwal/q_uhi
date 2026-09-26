@@ -364,12 +364,14 @@ def e6_quantum():
         ex = ExhaustiveSolver().sample(enc.model)
         gs_ok = bool(cbp.is_feasible(ex.best[: cbp.n])[0] and
                      np.isclose(cbp.objective_values(ex.best[: cbp.n])[0], f_opt))
-        spec = annealing_spectrum(enc.model, np.linspace(0, 1, 81 if not QUICK else 21))
-        inner = spec["s"] <= 0.9
+        # Lanczos on s <= 0.95 (well-separated levels) plus the exact diagonal at s = 1
+        s_grid = np.append(np.linspace(0, 0.95, 39 if not QUICK else 11), 1.0)
+        spec = annealing_spectrum(enc.model, s_grid)
+        inner = spec["s"] <= 0.95
         row = {"penalty_mult": m, "n_qubits": n, "ground_state_is_optimum": gs_ok,
                "min_gap": spec["min_gap"], "s_min_gap": spec["s_min_gap"],
                "final_gap": float(spec["gap"][-1]),
-               "interior_min_gap_s_le_0.9": float(spec["gap"][inner].min()),
+               "interior_min_gap_s_le_0.95": float(spec["gap"][inner].min()),
                "degeneracy": spec["degeneracy"], "adiabatic_time_scale_1_over_gap2": 1 / spec["min_gap"] ** 2}
         for T in ([10, 100, 1000] if not QUICK else [10]):
             row[f"p_ground_T{T}"] = schrodinger_anneal(enc.model, T, steps=max(400, 2 * T))["p_ground"]
@@ -388,7 +390,7 @@ def e6_quantum():
     import matplotlib.pyplot as plt
     fig, axs = plt.subplots(1, 2, figsize=(11, 4))
     axs[0].plot(df.penalty_mult, df.min_gap, marker="o", label="min gap over s∈[0,1]")
-    axs[0].plot(df.penalty_mult, df["interior_min_gap_s_le_0.9"], marker="s", label="min gap over s≤0.9")
+    axs[0].plot(df.penalty_mult, df["interior_min_gap_s_le_0.95"], marker="s", label="min gap over s≤0.95")
     axs[0].plot(df.penalty_mult, df.final_gap, marker="^", ls="--", label="final gap (s=1)")
     axs[0].set(xscale="log", yscale="log", xlabel="Λ / Λ_safe", ylabel="gap (H_P scaled to [0,1])",
                title="Penalty weight vs annealing gaps")

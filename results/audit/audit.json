@@ -1,0 +1,140 @@
+{
+  "A1_ising_roundtrip": {
+    "forward_energy_match": true,
+    "roundtrip_matrix_match": false,
+    "roundtrip_energy_match": false,
+    "Q": [
+      [
+        1.0,
+        -2.0,
+        0.0
+      ],
+      [
+        -2.0,
+        3.0,
+        -1.0
+      ],
+      [
+        0.0,
+        -1.0,
+        2.0
+      ]
+    ],
+    "Q_roundtrip": [
+      [
+        1.0,
+        -4.0,
+        0.0
+      ],
+      [
+        -4.0,
+        3.0,
+        -2.0
+      ],
+      [
+        0.0,
+        -2.0,
+        2.0
+      ]
+    ]
+  },
+  "A2_green_layout_qubo": {
+    "area_budget_fraction=0.3": {
+      "n": 11,
+      "area_budget_m2": 8250.0,
+      "cell_area_m2": 2500.0,
+      "budget_in_cells": 3.3,
+      "max_abs_Q": 1540000001.9999995,
+      "max_abs_Q_physical": 2.0,
+      "scale_ratio": 770000000.9999998,
+      "qubo_minimiser_cells": 3,
+      "qubo_minimiser_area_m2": 7500.0,
+      "qubo_minimiser_feasible": true,
+      "true_constrained_opt_cells": 3,
+      "note": "(sum a_i x_i - A_max)^2 penalises under-use and, with A_max not a multiple of a_i, prefers the infeasible over-budget count"
+    },
+    "area_budget_fraction=0.33": {
+      "n": 11,
+      "area_budget_m2": 9075.0,
+      "cell_area_m2": 2500.0,
+      "budget_in_cells": 3.63,
+      "max_abs_Q": 1721500001.9999995,
+      "max_abs_Q_physical": 2.0,
+      "scale_ratio": 860750000.9999998,
+      "qubo_minimiser_cells": 4,
+      "qubo_minimiser_area_m2": 10000.0,
+      "qubo_minimiser_feasible": false,
+      "true_constrained_opt_cells": 3,
+      "note": "(sum a_i x_i - A_max)^2 penalises under-use and, with A_max not a multiple of a_i, prefers the infeasible over-budget count"
+    }
+  },
+  "A3_sqa_temperature": {
+    "h": 0.5,
+    "Gamma": 0.7,
+    "beta": 2.0,
+    "P": 16,
+    "exact": -0.5451543487328177,
+    "ours": -0.5462474489795919,
+    "legacy_action": -0.9971683673469388,
+    "exact_for_legacy_parameters": -0.9961937174960906
+  },
+  "A4_theorem_iv1_counterexample": {
+    "lambda": 2.02,
+    "penalised_minimiser": [
+      1,
+      1
+    ],
+    "minimiser_feasible": false,
+    "violation_squared": 0.03999999999999998
+  },
+  "A5_four_cell_example": {
+    "constrained_opt": [
+      1,
+      1,
+      0,
+      0
+    ],
+    "constrained_opt_value": -0.7999999999999999,
+    "upper_reading_matches_intended": true,
+    "symmetric_reading_matches_intended": false,
+    "symmetric_reading_minimiser": [
+      1,
+      0,
+      0,
+      0
+    ],
+    "symmetric_reading_minimiser_cardinality": 1,
+    "plan_4cell_claim": {
+      "claimed_x": [
+        0,
+        1,
+        1,
+        0
+      ],
+      "claimed_f": -5.0,
+      "best_two_cell_x": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "best_two_cell_f": -6.0
+    }
+  },
+  "A6_research_results": {
+    "qubo_min_value": -15798407381.793875,
+    "energies": {
+      "SA": -68938504968.72012,
+      "Tabu": -68938504993.36786,
+      "GA": -68938505008.27289,
+      "SQA": 0.0
+    },
+    "green_spaces": {
+      "SA": 8,
+      "Tabu": 8,
+      "GA": 8,
+      "SQA": 0
+    },
+    "sqa_all_zero": true
+  }
+}

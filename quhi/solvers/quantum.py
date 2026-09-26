@@ -212,6 +212,9 @@ def annealing_spectrum(model: BinaryPolynomial, s_values: Sequence[float], k: in
         Xsum = np.column_stack([drv(e) for e in np.eye(N)])
     evs = []
     for s in s_values:
+        if s >= 1.0 - 1e-12:              # H(1) = H_P is diagonal: exact, and avoids slow
+            evs.append(np.sort(diag)[:kk])  # Lanczos convergence on its near-degenerate bottom
+            continue
         if Xsum is not None:
             w = np.linalg.eigvalsh((1 - s) * Xsum + s * np.diag(diag))[:kk]
         else:
