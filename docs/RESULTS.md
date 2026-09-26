@@ -21,7 +21,7 @@ field-validated UHI predictions.
 4. **Penalty weight is a real trade-off.** The certified-safe weight gives 100% feasibility but a
    rugged landscape. On the constrained multi-intervention problem, 0.01× that weight plus
    classical repair raises the optimal rate from ≤ 5% to 42–47% for SA and Tabu (E4). The same
-   penalties also shrink the annealing gap in proportion to the weight (E6).
+   penalties shrink the final annealing gap as 1/Λ, so the adiabatic time grows as Λ² (E6).
 5. **No quantum-inspired advantage once compute is matched.** SQA beats SA at equal sweeps, but SA
    given the same number of spin-flip attempts is comparable on the park family (17 variables:
    P(opt) 0.54 ± 0.07 for SQA vs 0.50 ± 0.11 for SA-matched, over 12 instance-seed runs).
@@ -174,7 +174,33 @@ quadratisation.
 `results/E6_quantum/`. Setup: 7×7 city, 10 decision + 4 slack = 14 qubits.
 H(s) = −(1−s)ΣX + s·H_P, with H_P normalised to [0,1].
 
-E6_TABLE_PLACEHOLDER
+| Λ/Λ_safe | ground state = optimum | final gap Δ(s=1) | 1/Δ² | P(ground), anneal T=10 / 100 / 1000 | QAOA P(ground) p=1 / 2 / 4 / 6 | QAOA approx. ratio p=6 |
+|---|---|---|---|---|---|---|
+| 0.1 | ✓ | 7.1e-5 | 2.0e8 | 1.0e-4 / 2.3e-4 / 5.8e-4 | 0.00085 / 0.0011 / 0.0017 / 0.0019 | 0.9963 |
+| 0.3 | ✓ | 2.4e-5 | 1.8e9 | 1.0e-4 / 2.3e-4 / 5.6e-4 | 0.00085 / 0.0011 / 0.0016 / 0.0018 | 0.9977 |
+| 1 | ✓ | 7.1e-6 | 2.0e10 | 1.0e-4 / 2.3e-4 / 5.5e-4 | 0.00085 / 0.0010 / 0.0016 / 0.0017 | 0.9981 |
+| 3 | ✓ | 2.4e-6 | 1.8e11 | 1.0e-4 / 2.3e-4 / 5.5e-4 | 0.00075 / 0.0010 / 0.0016 / 0.0017 | 0.9982 |
+| 10 | ✓ | 7.1e-7 | 2.0e12 | 1.0e-4 / 2.3e-4 / 5.5e-4 | 0.00075 / 0.0010 / 0.0016 / 0.0017 | 0.9980 |
+
+Uniform random sampling finds the optimum with probability 1/2¹⁴ = 6.1e-5.
+
+**Readings.**
+* **The gap is set by the penalty.** The final gap scales exactly as 1/Λ: the objective
+  differences shrink relative to the spectrum width, which the penalty dominates. The minimum gap
+  sits at s = 1. On the grid (s ≤ 0.95 by Lanczos, plus s = 1 exactly), the lowest gap decreases
+  monotonically toward the end, with no earlier avoided crossing; the "interior" value 0.10 is just
+  2(1−s) at s = 0.95. The adiabatic time scale 1/Δ² therefore grows as Λ², from 2×10⁸ to 2×10¹²
+  (in units of the normalised H_P). It is not the classical hardness of the instance that makes
+  analog QA hard here; it is the energy resolution the penalty encoding demands.
+* **Practical anneal times are far from adiabatic.** At T ≤ 1000 the ground-state probability is
+  about 9× uniform and essentially independent of Λ.
+* **QAOA's approximation ratio is misleading.** It is ≈ 0.998, but it is measured on a
+  penalty-dominated scale, so it mostly means "feasible and low-penalty". The probability of the
+  actual optimum only grows from 0.08% (p = 1) to 0.17–0.19% (p = 6), about 30× uniform, and
+  falls slightly as Λ grows.
+* **Implications.** A useful quantum approach for this problem class needs penalty-light encodings:
+  constraint-preserving mixers (XY/Dicke-state QAOA for budget/cardinality), native k-local terms
+  (E5), or weak penalties plus classical repair (E4).
 
 ## E7: end-to-end showcase
 `results/E7_showcase/`: `city.png`, `transition.png`, `cooling_milp.png`, `convergence.png`.

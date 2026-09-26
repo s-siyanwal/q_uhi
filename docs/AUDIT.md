@@ -123,9 +123,9 @@ is that the code base mixes the symmetric and upper-triangular conventions for Q
   details. The zip contains `__pycache__` and `.coverage` artefacts.
 * **Scaling claims.** The "expected quantum advantage" section cites asymptotic
   QA-vs-SA residual-energy results for 1D disordered chains (Santoro et al. 2002). These do not
-  transfer to dense, penalty-dominated QUBOs. Experiment E6 shows that penalties compress
-  the physical energy scale by about 10⁴ relative to the spectrum width, which is the
-  opposite of what analog hardware needs.
+  transfer to dense, penalty-dominated QUBOs. Experiment E6 shows that, with the certified
+  penalty, the objective's level spacing is 7×10⁻⁶ of the spectrum width (14 qubits), and that
+  this gap shrinks as 1/Λ. That is the opposite of what analog hardware needs.
 
 ## What was kept
 
