@@ -139,7 +139,9 @@ class ConstrainedQAOA:
 
     def __init__(self, p: int = 3, shots: int = 256, moves: Sequence[str] = ("swap", "add_remove"),
                  swap_graph: str = "complete", max_feasible: int = 4000, optimize: bool = True,
-                 maxiter: int = 300, restarts: int = 3, ramp: float = 0.75):
+                 maxiter: int = 300, restarts: int = 3, ramp: float = 0.75,
+                 time_limit_s: Optional[float] = None):
+        self.time_limit_s = time_limit_s        # stop L-BFGS-B (keep best angles) after this
         self.p = p
         self.shots = shots
         self.moves = tuple(moves)
@@ -185,9 +187,20 @@ class ConstrainedQAOA:
         cs = (c - c.mean()) / sd
         p = self.p
 
+        seen = {"th": None, "val": np.inf}
+
+        class _Timeout(Exception):
+            pass
+
         def f(th):
+            if self.time_limit_s is not None and seen["th"] is not None \
+                    and time.perf_counter() - t0 > self.time_limit_s:
+                raise _Timeout
             psi = self.state(prep, th[:p], th[p:])
-            return float(np.real(np.vdot(psi, cs * psi)))
+            val = float(np.real(np.vdot(psi, cs * psi)))
+            if val < seen["val"]:
+                seen["th"], seen["val"] = np.array(th, copy=True), val
+            return val
 
         k = (np.arange(p) + 0.5) / p
         starts = [np.concatenate([self.ramp * k, self.ramp * (1 - k)])]
@@ -195,8 +208,14 @@ class ConstrainedQAOA:
         best, nfev = None, 0
         for x0 in starts:
             if self.optimize:
-                res = minimize(f, x0, method="L-BFGS-B", options={"maxiter": self.maxiter})
-                th, val, nfev = res.x, res.fun, nfev + res.nfev
+                try:
+                    res = minimize(f, x0, method="L-BFGS-B", options={"maxiter": self.maxiter})
+                    th, val, nfev = res.x, res.fun, nfev + res.nfev
+                except _Timeout:
+                    th, val = seen["th"], seen["val"]
+                    if best is None or val < best[1]:
+                        best = (th, val)
+                    break
             else:
                 th, val = x0, f(x0)
             if best is None or val < best[1]:

@@ -124,7 +124,9 @@ class FeasibleSA:
     name = "FeasibleSA"
 
     def __init__(self, num_sweeps: int = 1000, num_reads: int = 32, beta_range: Optional[tuple] = None,
-                 resolution: float = 1e-3, trace_every: int = 1):
+                 resolution: float = 1e-3, trace_every: int = 1,
+                 time_limit_s: Optional[float] = None):
+        self.time_limit_s = time_limit_s            # repeat read batches until this wall-clock
         self.num_sweeps = num_sweeps
         self.num_reads = num_reads
         self.beta_range = beta_range
@@ -166,6 +168,32 @@ class FeasibleSA:
 
     def sample_program(self, cbp: ConstrainedBinaryProgram, seed: Optional[int] = None,
                        x0: Optional[np.ndarray] = None) -> SampleSet:
+        if self.time_limit_s is None:
+            return self._sample_batch(cbp, seed, x0)
+        # anytime mode: batches of num_reads reads; a batch that ends after the limit is
+        # discarded (except the first); stop when the next batch would end after it.
+        import time
+        t0 = time.perf_counter()
+        rng = np.random.default_rng(seed)
+        parts = []
+        while True:
+            tb = time.perf_counter()
+            ss = self._sample_batch(cbp, int(rng.integers(2 ** 31)), x0 if not parts else None)
+            now = time.perf_counter()
+            if parts and now - t0 > self.time_limit_s:
+                break
+            parts.append(ss)
+            if now - t0 + (now - tb) > self.time_limit_s:
+                break
+        X = np.concatenate([p.samples for p in parts])
+        E = np.concatenate([p.energies for p in parts])
+        return SampleSet(X, E, self.name, {
+            "wall_time": time.perf_counter() - t0, "batches": len(parts),
+            "traces": np.concatenate([p.info["traces"] for p in parts]),
+            "flips_attempted": sum(p.info["flips_attempted"] for p in parts)})
+
+    def _sample_batch(self, cbp: ConstrainedBinaryProgram, seed: Optional[int] = None,
+                      x0: Optional[np.ndarray] = None) -> SampleSet:
         import time
 
         rng = np.random.default_rng(seed)

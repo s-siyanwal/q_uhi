@@ -464,3 +464,80 @@ MILP, each column on the same locked temperature scale and resampled to 40 frame
 
 Stills for a paper: `compare_final.png` (A; the QAOA panel shows the most probable plan) and
 `compare_final_B_mix_10x10_s0.png`.
+
+## E12: comparable-performance bakeoff
+*(The definition and conventions below were committed before E12 was run.)*
+
+**Families.**
+- **H (hard):** 8×8, 10×10 and 12×12 cities (seeds 100–102; candidate fraction 0.3) with park, water and cool pavement, budget = R (grid side), and at least one intervention per district. The 10×10 and 12×12 cities add a 0.3 °C park-block synergy (quartic terms wherever a 2×2 candidate block exists). With budget = R, the greedy planner is infeasible on 6 of 9 seeds.
+- **C (control):** three park-only 8×8 cities (seeds 100–102).
+- **MILP:** HiGHS with an 8 s cap; the gap is recorded if it does not certify.
+- **Feasible set:** |F| is enumerated up to 20,000 and reported as ">20k" above that.
+
+**COMPARABLE.** A method is comparable on a family if, at matched wall-clock T\* per instance, all three hold:
+1. P(feasible) = 1.
+2. Its family-mean benefit_true is at least 0.95 × the best classical family-mean benefit_true.
+3. No run exceeds 1.5 T\*.
+
+The pieces of that definition:
+- **benefit_true** is exact saturating (plus synergy) cooling of the returned plan, divided by the cooling of the MILP plan. If MILP is not certified, the divisor is the best feasible plan any method returned. Infeasible counts as 0. benefit_true can exceed 1, because MILP certifies the K=2 surrogate, not the exact physics.
+- **T\*** = max(median wall time of default FeasibleSA over two seeds [1,000 sweeps, 32 reads], HiGHS wall time capped at 8 s).
+- **Best classical** is the best of: HiGHS at the cap, FeasibleSA, the greedy planner, Tabu-on-F, and SA-matched (α = 0.01) + repair.
+
+**Convention (applied to every heuristic).**
+- Each (instance, sampler seed) run gets T\* of wall-clock, as repeated batches of reads.
+- A batch that would end after T\* is not started, or is discarded if it runs over.
+- The method returns its best feasible plan, and that plan is scored.
+- There are two sampler seeds per instance.
+- QAOA returns the best of 256 shots drawn from the final state.
+- P(opt) is the fraction of runs whose returned plan attains the certified optimum. It is reported as secondary, and only on certified instances.
+
+**Contestants.**
+- **FeasibleSQA:** PIMC with P = 8 slices, each slice feasible, 500 sweeps, 2 reads per batch.
+- **QAOA-seeded FeasibleSA:** quantum seeds only when |F| ≤ 4,000.
+- **ConstrainedQAOA p = 2 and p = 4:** only when |F| ≤ 4,000.
+- **X-mixer penalty QAOA:** a negative control, run only when the penalty QUBO has ≤ 14 qubits.
+
+The safe-Λ slack QUBO and the Rosenberg QUBO are not contestants.
+
+### E12 results
+`results/E12_comparable/` holds `raw.csv`, `summary.csv`, `e12.md`, `benefit_vs_time.png` and the returned-plan grids `plans_H_10x10_s100.png` and `plans_C_park_8x8_s100.png`. The full run took 16 min on an otherwise idle machine; a first run that overlapped with pytest was discarded.
+
+**Instances.**
+- **T\*:** 1.4–1.6 s on H 8×8, 4.0–4.7 s on H 10×10, 18–20 s on H 12×12 (set by FeasibleSA's default run on the quartic synergy objective with 66 bits), and 0.13–0.15 s on C.
+- **MILP:** certified all 12 instances, in 0.81 s on average for H.
+- **|F|:** 822–2,484 on H 8×8 and >20k on H 10×10 and 12×12.
+
+**Family H**, 9 instances × 2 sampler seeds. benefit_true is the mean, with the minimum in brackets.
+
+| method | kind | P(feas) | P(opt) | benefit 8×8 / 10×10 / 12×12 | benefit_true | wall s | comparable |
+|---|---|---|---|---|---|---|---|
+| MILP (HiGHS, 8 s cap) | classical | 1 | 1 | 1 / 1 / 1 | **1.000** | 0.81 | bar |
+| Greedy planner | classical | 0.33 | 0.33 | 0 / 0.67 / 0.33 | 0.333 [0] | 0.009 | no |
+| FeasibleSA | classical | 1 | 0.78 | 1 / 1 / 0.920 | 0.973 [0.81] | 7.7 | yes |
+| Tabu-on-F | classical | 1 | 0.78 | 1 / 0.978 / 0.951 | 0.976 [0.71] | 8.1 | yes |
+| SA-matched α=0.01 + repair | classical/hybrid | 0.83 | 0.72 | 0.493 / 1 / 1 | 0.831 [0] | 7.8 | no |
+| **FeasibleSQA** | quantum-inspired (PIMC on F) | 1 | 0.72 | 1 / 1 / 0.943 | **0.981** [0.85] | 8.0 | **yes** |
+| QAOA-seeded FeasibleSA | hybrid | 1 | 0.83 | 0.667 / 1 / 0.951 | 0.873 [0] | 8.1 | no |
+| ConstrainedQAOA p=2 (8×8 only) | quantum (subspace sim) | 1 | 0.50 | 0.658 / – / – | 0.658 [0] | 2.0 | no |
+| ConstrainedQAOA p=4 (8×8 only) | quantum (subspace sim) | 1 | 0.17 | 0.665 / – / – | 0.665 [0] | 2.2 | no |
+
+**Verdict: FeasibleSQA is COMPARABLE on H by the pre-committed definition, but MILP is still better.**
+- **Against the bar.** FeasibleSQA's family-mean benefit_true is 0.981, against a best classical of 1.000 (HiGHS). The threshold is 0.95, P(feasible) = 1, and no run went over time.
+- **MILP is faster.** It reaches 1.000 on every instance, in 0.8 s on average against T\* = 8.4 s. FeasibleSQA reaches the certified optimum on 72% of runs.
+- **Against FeasibleSA and Tabu-on-F.** FeasibleSQA is slightly above both (0.981 vs 0.973 and 0.976) and has the best worst case (0.85 vs 0.81 and 0.71). The whole difference comes from the 12×12 synergy cities (0.943 vs 0.920 and 0.951), where no heuristic reaches the optimum reliably within 20 s. That is 3 instances × 2 seeds, so the difference is within seed noise. The fair statement is that FeasibleSQA **ties** the feasible-space classical annealers; it does not beat them.
+
+**The QAOA contestants and the hybrid do not qualify:**
+- **ConstrainedQAOA** is only simulable on H 8×8 (|F| ≤ 2,484). There, building and diagonalising the |F|×|F| mixer alone takes longer than T\* ≈ 1.5 s. The |F| = 2,484 city runs over 1.5 T\* and scores 0, which is the pre-committed rule.
+- **Constrained QAOA on the other two 8×8 cities** (|F| = 822 and 911) stays within T\*. Its best of 256 shots averages 0.988 with p=2 and 0.997 with p=4. QAOA-seeded FeasibleSA scores 1.000 there, with 75–85% of its wall-clock spent in QAOA.
+- **QAOA-seeded FeasibleSA** fails for the same reason on the |F| = 2,484 city: 99% of its wall-clock goes to QAOA there. On 10×10 and 12×12 there is no quantum seed (|F| > 20k), and it is FeasibleSA seeded with greedy plus random feasible plans (0.951 on 12×12).
+- **The E9 hybrid** (α = 0.01 + repair) is the best method on 10×10 and 12×12 (1.000). It fails on all three 8×8 cities (0.49 in total), because its greedy repair cannot restore feasibility when the budget is tight and equity binds. This limits the declared recipe, not the sampler.
+
+**Family C (control).** All nine methods except the X-mixer control reach benefit 1.000 with P(opt) = 1, and so does the greedy planner (C is the submodular park case where greedy ≈ MILP). The X-mixer penalty QAOA scores 0.17 because 5 of its 6 runs exceed 1.5 T\* = 0.2 s. FeasibleSQA's H result is not a C-only win: on C every method is at 1.000.
+
+**E13 (real-shaped 16×16 tile)** was skipped. T\* already reaches 20 s per run on the 12×12 synergy cities. A 16×16 tile would need several times that for each of 7 methods × 2 seeds, which is more than a short extra run.
+
+## What is still not hardware
+- **FeasibleSQA** is path-integral Monte Carlo on the feasible set: a classical sampler of a Trotterised transverse field whose slices are restricted to F. It is validated against the exact single-qubit ⟨σz⟩ (`tests/test_feasible_sqa.py`). It is not a model of an annealer, and no annealer implements a transverse field restricted to F.
+- **ConstrainedQAOA** is an exact state-vector simulation on span(F), built from a dense |F|×|F| eigendecomposition. It is not a compiled circuit. The cost that makes it miss T\* on H 8×8 is a cost of the simulation, not of the circuit.
+- **No CQM or hybrid-cloud sampler ran.** dimod is not installed and there is no API token. `quhi.solvers.cqm` builds a dependency-free constraint spec, tested against `ConstrainedBinaryProgram.is_feasible`, plus a `to_cqm` builder for when dimod exists. No D-Wave result is reported.

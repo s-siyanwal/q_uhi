@@ -942,6 +942,208 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
 
 
+# ----------------------------------------------------------------- E12
+E12_SEEDS = (100, 101, 102)
+E12_CLASSICAL = ("MILP (HiGHS, 8 s cap)", "Greedy planner", "FeasibleSA", "Tabu-on-F", "SA-matched α=0.01 + repair")
+E12_KIND = {"MILP (HiGHS, 8 s cap)": "classical", "Greedy planner": "classical", "FeasibleSA": "classical",
+            "Tabu-on-F": "classical", "SA-matched α=0.01 + repair": "classical/hybrid",
+            "FeasibleSQA": "quantum-inspired (PIMC on F)", "QAOA-seeded FeasibleSA": "hybrid (subspace-sim QAOA seeds)",
+            "ConstrainedQAOA p=2": "quantum (subspace sim)", "ConstrainedQAOA p=4": "quantum (subspace sim)",
+            "X-mixer penalty QAOA p=2": "quantum (state-vector sim), negative control"}
+
+
+def _e12_instances():
+    out = []
+    sizes = (8, 10, 12) if not QUICK else (8,)
+    seeds = E12_SEEDS if not QUICK else E12_SEEDS[:1]
+    for R in sizes:
+        for s in seeds:
+            c = generate_city(R, R, seed=s, candidate_fraction=0.3)
+            pr = UHIPlanningProblem(c, interventions=DEFAULT_MIX, budget=R, min_per_district=1,
+                                    cluster_bonus=0.3 if R >= 10 else 0.0)
+            out.append((f"H_{R}x{R}_s{s}", "H", pr, pr.program(2)))
+    for s in seeds:
+        c = generate_city(8, 8, seed=s, candidate_fraction=0.3)
+        pr = UHIPlanningProblem(c)
+        out.append((f"C_park_8x8_s{s}", "C", pr, pr.program(2)))
+    return out
+
+
+def _anytime_sa_hybrid(cbp, enc, T, seed, sweeps=17000, reads=4):
+    """E9 hybrid under a wall-clock budget: SA on the α=0.01 QUBO, then repair + local search."""
+    br = suggest_beta_range(enc.model, RES)
+    t0 = time.perf_counter()
+    best, rng = [], np.random.default_rng(seed)
+    while True:
+        tb = time.perf_counter()
+        ss = SimulatedAnnealing(num_sweeps=sweeps, num_reads=reads, beta_range=br).sample(
+            enc.model, seed=int(rng.integers(2 ** 31)))
+        X = postprocess(cbp, ss.samples[:, :cbp.n])
+        now = time.perf_counter()
+        if best and now - t0 > T:
+            break
+        best.append(X)
+        if now - t0 + (now - tb) > T:
+            break
+    return np.concatenate(best), time.perf_counter() - t0
+
+
+def _best_feasible(cbp, X):
+    X = np.atleast_2d(X)[:, :cbp.n]
+    feas = cbp.is_feasible(X)
+    if not feas.any():
+        return X[0], False
+    f = np.where(feas, cbp.objective_values(X), np.inf)
+    return X[int(np.argmin(f))], True
+
+
+def e12_comparable():
+    """E12: can a quantum / quantum-inspired method reach comparable benefit at matched wall-clock?"""
+    from quhi.solvers.feasible_sqa import FeasibleSQA
+    from quhi.solvers.feasible_tabu import TabuOnF
+    from quhi.solvers.warmstart import QaoaSeededFeasibleSA
+
+    d = out("E12_comparable")
+    run_seeds = (0, 1) if not QUICK else (0,)
+    rows, notes, plans_keep = [], [], {}
+    for name, fam, prob, cbp in _e12_instances():
+        # warm up the numba kernels on this instance (compile time is excluded from T*)
+        FeasibleSA(num_sweeps=5, num_reads=1).sample_program(cbp, seed=0)
+        FeasibleSQA(num_sweeps=5, num_reads=1).sample_program(cbp, seed=0)
+        TabuOnF(max_iter=5, num_reads=1).sample_program(cbp, seed=0)
+        t0 = time.perf_counter()
+        ms = MILPSolver(time_limit=8.0).solve(cbp)
+        t_milp = time.perf_counter() - t0
+        certified = bool(ms.info["optimal"])
+        f_opt, x_milp = ms.best_energy, ms.best
+        try:
+            nF = len(enumerate_feasible(cbp, max_states=20000))
+            F = enumerate_feasible(cbp) if nF <= 4000 else None
+        except ValueError:
+            nF, F = None, None
+        fsa_t = [FeasibleSA().sample_program(cbp, seed=sd).wall_time for sd in (0, 1)]
+        T = max(float(np.median(fsa_t)), min(t_milp, 8.0))
+        enc = cbp.to_penalty_model(penalty_weight=0.01 * cbp.to_penalty_model().penalty_weight)
+        safe = cbp.to_penalty_model()
+        base = {"instance": name, "family": fam, "n": cbp.n, "n_feasible": nF if nF is not None else ">20k",
+                "certified": certified, "milp_gap": ms.info.get("mip_gap", np.nan), "T_star": T}
+        results = []                                   # (method, seed, plan, wall, extra)
+        results.append(("MILP (HiGHS, 8 s cap)", 0, x_milp, t_milp, {}))
+        t0 = time.perf_counter()
+        g = prob.greedy_plan()
+        results.append(("Greedy planner", 0, g, time.perf_counter() - t0, {}))
+        for sd in run_seeds:
+            ss = FeasibleSA(num_reads=4, time_limit_s=T).sample_program(cbp, seed=sd)
+            results.append(("FeasibleSA", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time, {}))
+            ss = TabuOnF(num_reads=2, time_limit_s=T).sample_program(cbp, seed=sd)
+            results.append(("Tabu-on-F", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time, {}))
+            X, w = _anytime_sa_hybrid(cbp, enc, T, sd)
+            results.append(("SA-matched α=0.01 + repair", sd, _best_feasible(cbp, X)[0], w, {}))
+            ss = FeasibleSQA(num_sweeps=500, num_reads=2, trotter_slices=8, time_limit_s=T).sample_program(cbp, seed=sd)
+            results.append(("FeasibleSQA", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                            {"batches": ss.info["batches"]}))
+            ss = QaoaSeededFeasibleSA(time_limit_s=T, greedy=g).sample_program(cbp, seed=sd, F=F)
+            results.append(("QAOA-seeded FeasibleSA", sd, _best_feasible(cbp, ss.samples)[0], ss.info["wall_time"],
+                            {"quantum_seed": ss.info["quantum_seed"], "frac_qaoa": ss.info["frac_qaoa"]}))
+            if F is not None:
+                for p in (2, 4):
+                    q = ConstrainedQAOA(p=p, shots=256, restarts=1, time_limit_s=T)
+                    ss = q.sample_program(cbp, seed=sd)
+                    results.append((f"ConstrainedQAOA p={p}", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                                    {"qaoa_p_opt_exact": ss.info["p_opt"]}))
+            if safe.model.n <= 14:
+                t0 = time.perf_counter()
+                qs = QAOA(p=2, shots=256).sample(safe.model, seed=sd)
+                x, _ = _best_feasible(cbp, qs.samples)
+                results.append(("X-mixer penalty QAOA p=2", sd, x, time.perf_counter() - t0, {}))
+        if F is None:
+            notes.append(f"{name}: |F| = {base['n_feasible']} > 4000, ConstrainedQAOA not simulated; "
+                         "QAOA-seeded FeasibleSA ran with greedy/random seeds (no quantum seed)")
+        if safe.model.n > 14:
+            notes.append(f"{name}: safe penalty QUBO has {safe.model.n} > 14 qubits, X-mixer control skipped")
+        # scoring on exact physics
+        f0 = float(prob.true_objective(np.zeros(prob.n))[0])
+        cool = lambda x: f0 - float(prob.true_objective(x)[0])
+        feas_cool = [cool(x) for _, _, x, _, _ in results if cbp.is_feasible(x)[0]]
+        ref = cool(x_milp) if certified else max(feas_cool)
+        for m, sd, x, w, extra in results:
+            feas = bool(cbp.is_feasible(x)[0])
+            over = (w > 1.5 * T) and not m.startswith("MILP")
+            b = cool(x) / ref if (feas and not over) else 0.0
+            opt = feas and certified and float(cbp.objective_values(x)[0]) <= f_opt + 1e-7 * max(1.0, abs(f_opt))
+            rows.append({**base, "method": m, "kind": E12_KIND[m], "seed": sd, "wall_s": w, "over_T": over,
+                         "feasible": feas, "opt": opt if certified else np.nan, "benefit_true": b, **extra})
+            if sd == 0:
+                plans_keep.setdefault(name, {})[m] = x
+        print(f"E12 {name}: n={cbp.n} |F|={base['n_feasible']} T*={T:.2f}s certified={certified}", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    summ = _e12_summary(df)
+    save(summ, d, "summary")
+    _plot_e12(df, d / "benefit_vs_time.png")
+    for fam, key in (("H", "H_10x10_s100"), ("C", "C_park_8x8_s100")):
+        if key in plans_keep:
+            pk = plans_keep[key]
+            sel = {k: pk[k] for k in ("MILP (HiGHS, 8 s cap)", "Greedy planner", "FeasibleSA", "FeasibleSQA",
+                                      "QAOA-seeded FeasibleSA") if k in pk}
+            prob = next(p for n_, f_, p, c_ in _e12_instances() if n_ == key)
+            qp.plot_plan_transition(prob, sel, d / f"plans_{key}.png", f"E12 {key}: returned plans (sampler seed 0)")
+    (d / "e12.md").write_text(
+        "# E12 comparable-performance bakeoff\n\nDefinition and conventions: docs/RESULTS.md (E12). "
+        "benefit_true = exact-physics cooling / MILP-plan cooling; infeasible or over 1.5 T* = 0. "
+        "comparable = P(feas)=1, family-mean benefit ≥ 0.95 × best classical family mean, no run over 1.5 T*.\n\n"
+        + summ.round(4).to_markdown(index=False) + "\n\n## Skipped\n\n" + ("\n".join(f"- {n}" for n in notes) or "- none") + "\n")
+    print(summ.round(4).to_string())
+    print("\n".join(notes))
+
+
+def _e12_summary(df):
+    out = []
+    for fam, g in df.groupby("family", sort=False):
+        means = g.groupby("method").benefit_true.mean()
+        best_cl = max(means[m] for m in E12_CLASSICAL if m in means)
+        best_cl_name = max((m for m in E12_CLASSICAL if m in means), key=lambda m: means[m])
+        for m, h in g.groupby("method", sort=False):
+            cert = h.certified.all()
+            p_feas = h.feasible.mean()
+            mb = h.benefit_true.mean()
+            comp = bool(p_feas == 1.0 and mb >= 0.95 * best_cl and not h.over_T.any())
+            out.append({"method": m, "kind": h.kind.iloc[0], "family": fam, "n_mean": h.n.mean(),
+                        "n_feasible": ",".join(sorted({str(v) for v in h.n_feasible}, key=len)),
+                        "instances": h.instance.nunique(), "certified": f"{h.groupby('instance').certified.first().sum()}/{h.instance.nunique()}",
+                        "P_feas": p_feas, "P_opt": h.opt.astype(float).mean() if cert else np.nan,
+                        "benefit_mean": mb, "benefit_min": h.benefit_true.min(), "benefit_max": h.benefit_true.max(),
+                        "wall_s_mean": h.wall_s.mean(), "T_star_mean": h.T_star.mean(),
+                        "best_classical": f"{best_cl_name} ({best_cl:.4f})", "comparable": "yes" if comp else "no"})
+    return pd.DataFrame(out)
+
+
+def _plot_e12(df, path):
+    import matplotlib.pyplot as plt
+    fams = list(dict.fromkeys(df.family))
+    fig, axs = plt.subplots(1, len(fams), figsize=(6.2 * len(fams), 4.6))
+    axs = np.atleast_1d(axs)
+    for ax, fam in zip(axs, fams):
+        g = df[df.family == fam].groupby("method", sort=False).agg(w=("wall_s", "mean"), b=("benefit_true", "mean"),
+                                                                    k=("kind", "first"))
+        for m, r in g.iterrows():
+            mk = "o" if r.k.startswith("classical") else ("*" if "inspired" in r.k else "s")
+            ax.scatter(r.w, r.b, marker=mk, s=70)
+            ax.annotate(m, (r.w, r.b), fontsize=7, xytext=(4, 2), textcoords="offset points")
+        ax.axhline(0.95 * max(g.loc[[m for m in E12_CLASSICAL if m in g.index], "b"]), color="k", ls="--", lw=1,
+                   label="0.95 × best classical")
+        ax.axvline(df[df.family == fam].T_star.mean(), color="gray", ls=":", lw=1, label="mean T*")
+        ax.set_xscale("log")
+        ax.set_xlabel("mean wall-clock per run (s)")
+        ax.set_ylabel("mean benefit_true (exact physics / MILP plan)")
+        ax.set_title(f"E12 family {fam}  (o classical, * quantum-inspired, s quantum sim)")
+        ax.legend(fontsize=7, loc="lower right")
+        ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- E9
 def e9_hybrid():
     """Declared hybrid recipe: weak penalty (α·Λ_safe) + sampling + repair/feasible local search."""
@@ -1141,7 +1343,7 @@ class _DiagModel:
 
 EXPS = {"E1": e1_encoding, "E2": e2_fidelity, "E3": e3_scaling, "E4": e4_penalty,
         "E5": e5_hubo, "E6": e6_quantum, "E7": e7_showcase, "E8": e8_mixers, "E8b": e8b_depth, "E9": e9_hybrid,
-        "E10": e10_penalty_form, "E11": e11_pubo_gap, "ANIM": e_anim}
+        "E10": e10_penalty_form, "E11": e11_pubo_gap, "ANIM": e_anim, "E12": e12_comparable}
 
 
 def main():
