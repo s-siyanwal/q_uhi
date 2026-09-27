@@ -1144,6 +1144,229 @@ def _plot_e12(df, path):
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- E12b
+E12B_SQA = dict(num_sweeps=500, num_reads=2, trotter_slices=8)       # the E12 FeasibleSQA configuration
+
+
+def _e12b_clocks():
+    """Pre-declared clocks from E12 raw.csv: tight T* = median FeasibleSA wall on that instance;
+    W* = proposals FeasibleSQA used in E12 (median batches x num_reads x num_sweeps x P x n)."""
+    raw = pd.read_csv(ROOT / "E12_comparable" / "raw.csv")
+    T = raw[raw.method == "FeasibleSA"].groupby("instance").wall_s.median()
+    q = raw[raw.method == "FeasibleSQA"].groupby("instance").agg(b=("batches", "median"), n=("n", "first"))
+    per_read = E12B_SQA["num_sweeps"] * E12B_SQA["trotter_slices"]
+    reads = (q.b * E12B_SQA["num_reads"]).round().astype(int)
+    W = reads * per_read * q.n
+    seeded = raw[raw.method == "QAOA-seeded FeasibleSA"].groupby("instance").quantum_seed.all()
+    return T.to_dict(), W.astype(int).to_dict(), reads.to_dict(), seeded.to_dict()
+
+
+def e12b_ablation():
+    """E12b: E12 with the tight clock (FeasibleSA's own wall) and with equal proposal counts."""
+    from quhi.solvers.feasible_sqa import FeasibleSQA
+    from quhi.solvers.feasible_tabu import TabuOnF
+    from quhi.solvers.warmstart import QaoaSeededFeasibleSA
+
+    d = out("E12b_ablation")
+    Tc, Wc, Rc, seeded = _e12b_clocks()
+    run_seeds = (0, 1) if not QUICK else (0,)
+    rows = []
+    for name, fam, prob, cbp in _e12_instances():
+        FeasibleSA(num_sweeps=5, num_reads=1).sample_program(cbp, seed=0)
+        FeasibleSQA(num_sweeps=5, num_reads=1).sample_program(cbp, seed=0)
+        TabuOnF(max_iter=5, num_reads=1).sample_program(cbp, seed=0)
+        n = cbp.n
+        T, W, r_sqa = float(Tc[name]), int(Wc[name]), int(Rc[name])
+        t0 = time.perf_counter()
+        ms = MILPSolver(time_limit=8.0).solve(cbp)
+        t_milp = time.perf_counter() - t0
+        certified = bool(ms.info["optimal"])
+        use_q = bool(seeded.get(name, False))
+        F = enumerate_feasible(cbp) if use_q else None
+        g = prob.greedy_plan()
+        base = {"instance": name, "family": fam, "n": n, "certified": certified, "T_tight": T, "W_star": W}
+        res = [("MILP (HiGHS, 8 s cap)", "none", 0, ms.best, t_milp, np.nan)]
+        per_sweep = n
+        for sd in run_seeds:
+            # tight clock: E12 configurations, time limit = FeasibleSA's own wall
+            ss = FeasibleSA(num_reads=4, time_limit_s=T).sample_program(cbp, seed=sd)
+            res.append(("FeasibleSA", "tight", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                        ss.info["flips_attempted"]))
+            ss = TabuOnF(num_reads=2, time_limit_s=T).sample_program(cbp, seed=sd)
+            res.append(("Tabu-on-F", "tight", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                        ss.info["proposals"]))
+            ss = FeasibleSQA(**E12B_SQA, time_limit_s=T).sample_program(cbp, seed=sd)
+            res.append(("FeasibleSQA", "tight", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                        ss.info["batches"] * E12B_SQA["num_reads"] * E12B_SQA["num_sweeps"]
+                        * E12B_SQA["trotter_slices"] * per_sweep))
+            if use_q:
+                ss = QaoaSeededFeasibleSA(time_limit_s=T, greedy=g).sample_program(cbp, seed=sd, F=F)
+                res.append(("QAOA-seeded FeasibleSA", "tight", sd, _best_feasible(cbp, ss.samples)[0],
+                            ss.info["wall_time"], ss.info["sa_proposals"]))
+            # equal work: every method gets W* proposals, no clock
+            ss = FeasibleSA(num_reads=-(-W // (1000 * n))).sample_program(cbp, seed=sd)
+            res.append(("FeasibleSA", "equal_work", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                        ss.info["flips_attempted"]))
+            ss = TabuOnF(num_reads=2, max_proposals=W).sample_program(cbp, seed=sd)
+            res.append(("Tabu-on-F", "equal_work", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                        ss.info["proposals"]))
+            kw = {**E12B_SQA, "num_reads": r_sqa}
+            ss = FeasibleSQA(**kw).sample_program(cbp, seed=sd)
+            res.append(("FeasibleSQA", "equal_work", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time,
+                        r_sqa * E12B_SQA["num_sweeps"] * E12B_SQA["trotter_slices"] * per_sweep))
+            if use_q:
+                ss = QaoaSeededFeasibleSA(time_limit_s=T, greedy=g, sa_proposals=W).sample_program(cbp, seed=sd, F=F)
+                res.append(("QAOA-seeded FeasibleSA", "equal_work", sd, _best_feasible(cbp, ss.samples)[0],
+                            ss.info["wall_time"], ss.info["sa_proposals"]))
+        f0 = float(prob.true_objective(np.zeros(prob.n))[0])
+        cool = lambda x: f0 - float(prob.true_objective(x)[0])
+        ref = cool(ms.best)
+        for m, clk, sd, x, w, prop in res:
+            feas = bool(cbp.is_feasible(x)[0])
+            over = clk == "tight" and w > 1.5 * T
+            b = cool(x) / ref if (feas and not over) else 0.0
+            opt = feas and certified and float(cbp.objective_values(x)[0]) <= ms.best_energy + 1e-7 * max(1.0, abs(ms.best_energy))
+            rows.append({**base, "method": m, "clock": clk, "seed": sd, "wall_s": w, "proposals": prop,
+                         "over_T": over, "feasible": feas, "opt": opt, "benefit_true": b})
+        print(f"E12b {name}: n={n} T_tight={T:.2f}s W*={W:.3g} MILP {t_milp:.2f}s certified={certified}", flush=True)
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    _e12b_write(df, d)
+
+
+def _e12b_write(df, d):
+    summ = _e12b_summary(df)
+    save(summ, d, "summary")
+    (d / "e12b.md").write_text(
+        "# E12b equal-work + tight-clock ablation of E12\n\nClocks (pre-declared, from E12 raw.csv): "
+        "tight = median FeasibleSA wall on that instance in E12; equal_work W* = proposals FeasibleSQA used in "
+        "E12 (median batches × 2 reads × 500 sweeps × 8 slices × n); every method gets W* proposals "
+        "(FeasibleSA: more reads of 1000 sweeps; Tabu-on-F: batches until examined moves ≥ W*; "
+        "QAOA-seeded: W* SA proposals, QAOA simulation time not counted). benefit_true = exact-physics cooling / "
+        "MILP-plan cooling; infeasible = 0; tight clock: wall > 1.5 T = 0. comparable_to_feasible_sa = mean "
+        "benefit ≥ 0.95 × FeasibleSA mean on the same clock and the same instances; beats_feasible_sa = strictly "
+        "higher. w/t/l = instances where the method's seed-mean benefit is above / equal to / below FeasibleSA's.\n\n"
+        + summ.round(4).to_markdown(index=False) + "\n")
+    print(summ.round(4).to_string())
+
+
+def _e12b_summary(df):
+    out = []
+    for (fam, clk), g in df.groupby(["family", "clock"], sort=False):
+        fsa = g[g.method == "FeasibleSA"]
+        for m, h in g.groupby("method", sort=False):
+            mb = h.benefit_true.mean()
+            inst = h.groupby("instance").benefit_true.mean()
+            f_same = fsa[fsa.instance.isin(inst.index)]            # FeasibleSA on the same instances
+            fsa_mean = f_same.benefit_true.mean() if len(f_same) else np.nan
+            fsa_inst = f_same.groupby("instance").benefit_true.mean()
+            common = inst.index.intersection(fsa_inst.index)
+            dlt = inst[common] - fsa_inst[common]
+            if clk == "none":
+                comp = beats = wtl = ""
+            else:
+                comp = "yes" if mb >= 0.95 * fsa_mean else "no"
+                beats = "yes" if (m != "FeasibleSA" and mb > fsa_mean + 1e-12) else "no"
+                wtl = f"{(dlt > 1e-9).sum()}/{(dlt.abs() <= 1e-9).sum()}/{(dlt < -1e-9).sum()}"
+            out.append({"method": m, "clock": clk, "family": fam, "instances": h.instance.nunique(),
+                        "P_feas": h.feasible.mean(), "P_opt": h.opt.astype(float).mean(), "benefit_mean": mb,
+                        "benefit_min": h.benefit_true.min(), "wall_s": h.wall_s.mean(),
+                        "proposals": h.proposals.mean(), "FeasibleSA_benefit_same_clock_same_instances": fsa_mean,
+                        "comparable_to_feasible_sa": comp, "beats_feasible_sa": beats, "w/t/l_vs_FeasibleSA": wtl})
+    return pd.DataFrame(out)
+
+
+# ----------------------------------------------------------------- E13
+def _lst_tile_city(seed=0, R=16):
+    """LST-shaped 16x16 tile: compact hot core + cool edge, population on the core, candidate
+    lots removed from the core (E7-style mask).  Land use / roads / districts from generate_city."""
+    from quhi.uhi.city import BUILDING, CANDIDATE, City
+    rng = np.random.default_rng(seed)
+    base = generate_city(R, R, seed=seed, candidate_fraction=0.25, coast=False, n_existing_parks=2)
+    lu = base.land_use.copy()
+    rr, cc = np.meshgrid(np.linspace(0, 1, R), np.linspace(0, 1, R), indexing="ij")
+    r = np.hypot(rr - 0.5, cc - 0.5)
+    core = np.exp(-(r / 0.16) ** 2)                                   # compact core
+    edge = np.clip((r - 0.4) / 0.3, 0, 1)                             # cool rural edge
+    T0 = 29.0 + 6.0 * core - 1.5 * edge + 0.05 * rng.normal(size=(R, R))
+    in_core = (core > 0.3) & (lu == CANDIDATE)
+    idx = np.flatnonzero(in_core.ravel())
+    keep = rng.choice(idx, size=min(2, idx.size), replace=False) if idx.size else idx
+    lu.ravel()[np.setdiff1d(idx, keep)] = BUILDING                    # scarce lots in the core
+    pop = np.where(lu == BUILDING, 20 + 900 * core, 0.0) * rng.uniform(0.8, 1.2, size=(R, R))
+    return City(lu, T0, np.round(pop), base.district, base.cell_size, f"lst_tile_{R}x{R}_s{seed}")
+
+
+def e13_tile():
+    """E13: one LST-shaped tile; does a hot core with scarce lots open a classical gap?"""
+    from quhi.solvers.feasible_sqa import FeasibleSQA
+    from quhi.solvers.feasible_tabu import TabuOnF
+
+    d = out("E13_tile")
+    city = _lst_tile_city(0)
+    qp.plot_city(city, d / "city.png")
+    prob = UHIPlanningProblem(city, interventions=DEFAULT_MIX, budget=16, min_per_district=1, cluster_bonus=0.3)
+    cbp = prob.program(2)
+    FeasibleSA(num_sweeps=5, num_reads=1).sample_program(cbp, seed=0)
+    FeasibleSQA(num_sweeps=5, num_reads=1).sample_program(cbp, seed=0)
+    TabuOnF(max_iter=5, num_reads=1).sample_program(cbp, seed=0)
+    try:
+        nF = len(enumerate_feasible(cbp, max_states=4000))
+    except ValueError:
+        nF = ">4000"
+    t0 = time.perf_counter()
+    ms = MILPSolver(time_limit=8.0).solve(cbp)
+    t_milp = time.perf_counter() - t0
+    certified = bool(ms.info["optimal"])
+    T = float(np.median([FeasibleSA().sample_program(cbp, seed=sd).wall_time for sd in (0, 1)]))
+    enc = cbp.to_penalty_model(penalty_weight=0.01 * cbp.to_penalty_model().penalty_weight)
+    res = [("MILP (HiGHS, 8 s cap)", 0, ms.best, t_milp)]
+    t0 = time.perf_counter()
+    g = prob.greedy_plan()
+    res.append(("Greedy planner", 0, g, time.perf_counter() - t0))
+    for sd in (0, 1):
+        ss = FeasibleSA(num_reads=4, time_limit_s=T).sample_program(cbp, seed=sd)
+        res.append(("FeasibleSA", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time))
+        ss = TabuOnF(num_reads=2, time_limit_s=T).sample_program(cbp, seed=sd)
+        res.append(("Tabu-on-F", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time))
+        ss = FeasibleSQA(**E12B_SQA, time_limit_s=T).sample_program(cbp, seed=sd)
+        res.append(("FeasibleSQA", sd, _best_feasible(cbp, ss.samples)[0], ss.wall_time))
+        X, w = _anytime_sa_hybrid(cbp, enc, T, sd)
+        res.append(("SA-matched α=0.01 + repair", sd, _best_feasible(cbp, X)[0], w))
+    f0 = float(prob.true_objective(np.zeros(prob.n))[0])
+    cool = lambda x: f0 - float(prob.true_objective(x)[0])
+    ref = cool(ms.best)
+    rows = []
+    for m, sd, x, w in res:
+        feas = bool(cbp.is_feasible(x)[0])
+        over = (w > 1.5 * T) and not m.startswith("MILP")
+        rep = prob.report(x)
+        rows.append({"method": m, "seed": sd, "n": cbp.n, "n_feasible": nF, "budget": prob.budget,
+                     "certified": certified, "T_tight": T, "wall_s": w, "over_T": over, "feasible": feas,
+                     "opt": feas and float(cbp.objective_values(x)[0]) <= ms.best_energy + 1e-7 * max(1, abs(ms.best_energy)),
+                     "benefit_true": cool(x) / ref if (feas and not over) else 0.0,
+                     "cooling_true_C": cool(x), "exposure_temp_C": rep["exposure_temp_C"], "spend": rep["spend"]})
+    df = pd.DataFrame(rows)
+    save(df, d, "raw")
+    keep = {m: x for m, sd, x, w in res if sd == 0}
+    qp.plot_plan_transition(prob, {k: keep[k] for k in ("MILP (HiGHS, 8 s cap)", "Greedy planner", "FeasibleSA",
+                                                         "FeasibleSQA", "SA-matched α=0.01 + repair")},
+                            d / "plans.png", "E13 LST-shaped tile: returned plans (sampler seed 0)")
+    summ = df.groupby("method", sort=False).agg(P_feas=("feasible", "mean"), P_opt=("opt", "mean"),
+                                                benefit_mean=("benefit_true", "mean"), wall_s=("wall_s", "mean"))
+    rr, cc = np.meshgrid(np.linspace(-0.5, 0.5, 16), np.linspace(-0.5, 0.5, 16), indexing="ij")
+    core_c = int(((city.land_use == 2) & (np.exp(-(np.hypot(rr, cc) / 0.16) ** 2) > 0.3)).sum())
+    milp_easy = certified and t_milp < 2.0
+    g_feas = bool(cbp.is_feasible(g)[0])
+    (d / "e13.md").write_text(
+        f"# E13 LST-shaped tile (16x16, seed 0)\n\nn = {cbp.n}, |F| {nF}, budget {prob.budget}, equity ≥1 per "
+        f"district, cluster_bonus 0.3, candidate lots left in the core: {core_c}. MILP {t_milp:.2f} s, certified "
+        f"{certified}. Tight T* = {T:.2f} s (median default FeasibleSA wall). Greedy feasible: "
+        f"{g_feas}.\n\nHiGHS certifies in < 2 s: {'yes' if milp_easy else 'no'}. Greedy feasible: "
+        f"{'yes' if g_feas else 'no'}.\n\n" + summ.round(4).to_markdown() + "\n")
+    print(summ.round(4).to_string(), "\nMILP < 2 s:", milp_easy, "greedy feasible:", g_feas, "MILP", t_milp, "T", T, "n", cbp.n, "|F|", nF)
+
+
 # ----------------------------------------------------------------- E9
 def e9_hybrid():
     """Declared hybrid recipe: weak penalty (α·Λ_safe) + sampling + repair/feasible local search."""
@@ -1343,7 +1566,8 @@ class _DiagModel:
 
 EXPS = {"E1": e1_encoding, "E2": e2_fidelity, "E3": e3_scaling, "E4": e4_penalty,
         "E5": e5_hubo, "E6": e6_quantum, "E7": e7_showcase, "E8": e8_mixers, "E8b": e8b_depth, "E9": e9_hybrid,
-        "E10": e10_penalty_form, "E11": e11_pubo_gap, "ANIM": e_anim, "E12": e12_comparable}
+        "E10": e10_penalty_form, "E11": e11_pubo_gap, "ANIM": e_anim, "E12": e12_comparable,
+        "E12b": e12b_ablation, "E13": e13_tile}
 
 
 def main():

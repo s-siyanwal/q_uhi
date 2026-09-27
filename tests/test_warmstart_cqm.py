@@ -30,3 +30,11 @@ def test_to_cqm_if_dimod_available():
     pytest.importorskip("dimod")
     prob, cbp = _mix()
     assert len(to_cqm(cbp).constraints) == len(cqm_spec(cbp)["constraints"])
+
+
+def test_qaoa_seeded_sa_proposal_budget():
+    prob, cbp = _mix()
+    ss = QaoaSeededFeasibleSA(time_limit_s=2.0, ps=(2,), sa_sweeps=100,
+                              sa_proposals=10 * 100 * cbp.n).sample_program(cbp, seed=0)
+    assert ss.info["sa_proposals"] == 10 * 100 * cbp.n and len(ss.samples) == 10
+    assert cbp.is_feasible(ss.samples).all()

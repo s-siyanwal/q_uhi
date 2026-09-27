@@ -535,9 +535,88 @@ The safe-Λ slack QUBO and the Rosenberg QUBO are not contestants.
 
 **Family C (control).** All nine methods except the X-mixer control reach benefit 1.000 with P(opt) = 1, and so does the greedy planner (C is the submodular park case where greedy ≈ MILP). The X-mixer penalty QAOA scores 0.17 because 5 of its 6 runs exceed 1.5 T\* = 0.2 s. FeasibleSQA's H result is not a C-only win: on C every method is at 1.000.
 
-**E13 (real-shaped 16×16 tile)** was skipped. T\* already reaches 20 s per run on the 12×12 synergy cities. A 16×16 tile would need several times that for each of 7 methods × 2 seeds, which is more than a short extra run.
+**E13 (real-shaped 16×16 tile)** was skipped in this pass; it was run later (see E13 below).
 
 ## What is still not hardware
 - **FeasibleSQA** is path-integral Monte Carlo on the feasible set: a classical sampler of a Trotterised transverse field whose slices are restricted to F. It is validated against the exact single-qubit ⟨σz⟩ (`tests/test_feasible_sqa.py`). It is not a model of an annealer, and no annealer implements a transverse field restricted to F.
 - **ConstrainedQAOA** is an exact state-vector simulation on span(F), built from a dense |F|×|F| eigendecomposition. It is not a compiled circuit. The cost that makes it miss T\* on H 8×8 is a cost of the simulation, not of the circuit.
 - **No CQM or hybrid-cloud sampler ran.** dimod is not installed and there is no API token. `quhi.solvers.cqm` builds a dependency-free constraint spec, tested against `ConstrainedBinaryProgram.is_feasible`, plus a `to_cqm` builder for when dimod exists. No D-Wave result is reported.
+
+## E12b
+*(An ablation of E12, not a replacement. The E12 COMPARABLE definition and verdict stand as written. Both clocks were fixed from E12's `raw.csv` before E12b was run.)*
+
+**The E12 clock was not padded.** E12's T\* was max(median default FeasibleSA wall, min(HiGHS wall, 8 s)). HiGHS (0.01–2.3 s) was faster than default FeasibleSA on all 12 instances, so T\* was always FeasibleSA's own time. The H mean of 8.4 s is the average of 1.4 s (8×8), 4.2 s (10×10) and 19 s (12×12), not the 8 s cap. The tight clock below is therefore close to E12's clock. The real open question was work: FeasibleSQA's proposals are cheaper (a move that would leave F is rejected before the objective is evaluated), so in E12 it made about 3.6× more proposals than FeasibleSA in the same wall time.
+
+**Clocks.**
+- **Tight:** T = the median wall of FeasibleSA on that instance in E12 (0.12–18.8 s).
+- **Equal work:** W\* = the proposals FeasibleSQA used in E12 = median batches × 2 reads × 500 sweeps × 8 slices × n (2.1M–8.2M on H, 0.3–0.5M on C). Every method gets W\* proposals, with no clock:
+  - FeasibleSA: more reads of 1,000 sweeps.
+  - Tabu-on-F: batches until the examined moves (n single flips plus the swap pairs examined, per iteration) reach W\*.
+  - FeasibleSQA: 2 × median-batches reads.
+  - QAOA-seeded FeasibleSA: W\* SA proposals; the subspace-QAOA time is not counted.
+
+Same 9 H + 3 C instances and seeds, same E12 solver configurations, two sampler seeds per instance. QAOA-seeded only runs where E12 used quantum seeds (H 8×8 and C). `python scripts/run_experiments.py --only E12b` → `results/E12b_ablation/{raw.csv, summary.csv, e12b.md}` (21 min, idle machine). "vs FSA" compares against FeasibleSA on the same clock and the same instances; w/t/l counts instances by seed-mean benefit.
+
+**Family H**
+
+| method | clock | P(feas) | P(opt) | benefit mean [min] | 8×8 / 10×10 / 12×12 | wall s | proposals | FSA (same clock) | ≥ 0.95 FSA | beats FSA | w/t/l |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| MILP (HiGHS) | – | 1 | 1 | 1.000 | 1 / 1 / 1 | **0.77** | – | – | – | – | – |
+| FeasibleSA | tight | 1 | 0.78 | 0.973 [0.81] | 1 / 1 / 0.920 | 7.1 | 1.30M | 0.973 | – | – | – |
+| Tabu-on-F | tight | 1 | 0.83 | 0.977 [0.71] | 1 / 0.981 / 0.951 | 7.4 | 2.96M | 0.973 | yes | yes | 2/5/2 |
+| FeasibleSQA | tight | 1 | 0.72 | 0.981 [0.85] | 1 / 1 / 0.943 | 7.4 | 4.66M | 0.973 | yes | yes | 3/6/0 |
+| QAOA-seeded FSA (8×8) | tight | 1 | 1.00 | 0.667 [0] | 0.667 / – / – | 2.1 | 0.18M | 1.000 | no | no | 0/2/1 |
+| FeasibleSA | equal work | 1 | 0.89 | **0.988** [0.85] | 1 / 1 / 0.963 | 25.0 | 4.53M | 0.988 | – | – | – |
+| Tabu-on-F | equal work | 1 | 0.83 | 0.977 [0.71] | 1 / 0.981 / 0.951 | 11.3 | 4.65M | 0.988 | yes | no | 1/6/2 |
+| FeasibleSQA | equal work | 1 | 0.78 | **0.983** [0.81] | 1 / 1 / 0.948 | 7.1 | 4.53M | 0.988 | yes | no | 1/6/2 |
+| QAOA-seeded FSA (8×8) | equal work | 1 | 1.00 | 1.000 | 1 / – / – | 2.3 | 2.20M | 1.000 | yes | no | 0/3/0 |
+
+**Family C:** every method reaches 1.000 with P(opt) = 1 on both clocks. MILP takes 0.013 s.
+
+**Answer.** After removing the pad and equalising proposals, FeasibleSQA still matches FeasibleSA, but it no longer leads.
+- **The "pad" did not exist.** The tight clock reproduces E12: FeasibleSQA 0.981 vs FeasibleSA 0.973.
+- **E12's edge was an extra-work artefact.** In that time FeasibleSQA made 3.6× as many proposals (4.66M vs 1.30M). At an equal 4.5M proposals per run, FeasibleSA reaches 0.988 and FeasibleSQA 0.983; FeasibleSQA is ahead on 1 instance and behind on 2.
+- **FeasibleSQA is within 5% of FeasibleSA at equal proposals** (0.983 vs 0.988, threshold 0.938). It does not beat it.
+- **FeasibleSQA needs less wall-clock per proposal** (7.1 s vs 25 s for the same count). That is an implementation property of rejecting infeasible moves early, not a quantum effect.
+- **Tabu-on-F does not improve with more work** (0.977 on both clocks; its reads end on stalls, not on the budget).
+- **QAOA-seeded FSA** still loses the |F| = 2,484 city on the tight clock (setup over time). With QAOA time excluded, it reaches 1.000, as does FeasibleSA on those three cities.
+- **MILP versus the heuristics.** HiGHS certifies every H instance in 0.77 s on average (at most 2.2 s), while the heuristics get 7 s (tight) to 25 s (equal work) and still average below 1.
+
+## E13
+One LST-shaped 16×16 tile (seed 0, `_lst_tile_city` in `scripts/run_experiments.py`).
+- **Land use:** roads and districts come from `generate_city` (no coast).
+- **Baseline temperature:** a compact Gaussian hot core (+6 °C) with a cool rural edge (−1.5 °C).
+- **Population:** concentrated on the core.
+- **Candidate lots:** removed from the core except 2 (an E7-style mask).
+- **Problem:** DEFAULT_MIX, at least one intervention per district, budget 16, 0.3 °C park-block synergy.
+- **Size:** n = 108, |F| > 4,000, so there is no ConstrainedQAOA.
+- **Clock:** tight T\* = 68.6 s (median default FeasibleSA wall), two sampler seeds.
+
+Output: `python scripts/run_experiments.py --only E13` → `results/E13_tile/{raw.csv, e13.md, city.png, plans.png}`.
+
+| method | P(feas) | P(opt) | benefit_true (seeds 0, 1) | wall s |
+|---|---|---|---|---|
+| MILP (HiGHS, 8 s cap) | 1 | 1 | 1.000 | **1.67** (certified) |
+| Greedy planner | 0 | 0 | 0 (equity violated) | 0.06 |
+| FeasibleSA | 1 | 0.5 | 0.957 (0.914, 1.000) | 66.6 |
+| Tabu-on-F | 1 | 0 | 0.641 (0.914, 0.369) | 67.4 |
+| FeasibleSQA | 1 | 0.5 | 1.000 (1.000, 0.9997) | 63.7 |
+| SA-matched α=0.01 + repair | 1 | 1 | 1.000 | 64.7 |
+
+**The LST-shaped mask did not create a classical gap.**
+- **HiGHS certifies the tile in 1.67 s.**
+- **The greedy planner is infeasible**, because it ignores equity, exactly as on 6 of 9 H instances. That is not new difficulty.
+- **Among heuristics, E9 is best here.** The E9 hybrid (α = 0.01 + repair) reaches the optimum on both seeds on this looser budget, unlike on H 8×8.
+- **FeasibleSQA vs FeasibleSA** (1.000 vs 0.957) uses the tight clock with 2 seeds. By E12b, a tight-clock FeasibleSQA run makes several times more proposals than FeasibleSA, so this is not evidence of an advantage.
+- **Tabu-on-F** falls to 0.37 on one seed.
+
+## Status after E12b
+**Quantum-inspired PIMC on F is a feasible-space annealer that ties FeasibleSA; it is not a QPU result and it does not beat HiGHS.**
+- **FeasibleSQA:** at equal proposals it is within 5% of FeasibleSA on the hard family and slightly behind it. Its E12 lead came from making more proposals in the same time.
+- **Gate-model QAOA remains below the bar:**
+  - E8: XY-QAOA p ≤ 2 gives P(opt) ≈ 0.002 on mix + equity.
+  - E8b: Dicke-XY p = 6 gives mean P(opt) 0.43, against 1.00 for FeasibleSA.
+  - E12: ConstrainedQAOA p = 2 and p = 4 give benefit 0.66, and are only simulable on 8×8.
+- **HiGHS:** certifies every instance in this study (H, C and the E13 tile) in ≤ 2.3 s.
+- **Methods are frozen after E12b/E13.** There is no E14 solver.
+

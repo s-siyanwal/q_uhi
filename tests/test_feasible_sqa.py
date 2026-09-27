@@ -51,3 +51,9 @@ def test_time_limited_feasible_sa_is_anytime():
     cbp = _mix()
     ss = FeasibleSA(num_sweeps=200, num_reads=4, time_limit_s=0.3).sample_program(cbp, seed=0)
     assert cbp.is_feasible(ss.samples).all() and ss.info["batches"] >= 1
+
+
+def test_tabu_proposal_budget_is_reached():
+    cbp = _mix()
+    ss = TabuOnF(num_reads=1, max_proposals=20000).sample_program(cbp, seed=0)
+    assert ss.info["proposals"] >= 20000 and cbp.is_feasible(ss.samples).all()

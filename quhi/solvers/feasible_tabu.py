@@ -6,6 +6,8 @@ Every iteration evaluates all feasible single flips and all (on-bit, off-bit) sw
 if it improves the best objective found).  Flipped bits are tabu for ``tenure`` (+ a random
 0..tenure/2) iterations.  The objective is the constrained f(x): no penalty, no slack.
 A read ends after ``stall`` non-improving iterations; ``time_limit_s`` repeats reads.
+``max_proposals`` (equal-work runs) repeats batches until the number of examined proposals
+(n single flips + the swap pairs examined, per iteration) reaches it.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ def _tabu_f_run(n, offset, coeff, term_ptr, term_vars, var_ptr, var_terms,
     out = np.empty((R, n), dtype=np.int8)
     out_e = np.empty(R)
     iters = 0
+    evals = 0
     for r in range(R):
         x = X0[r].copy()
         zc = K.zero_counts(x, term_ptr, term_vars)
@@ -68,6 +71,7 @@ def _tabu_f_run(n, offset, coeff, term_ptr, term_vars, var_ptr, var_terms,
                 n_on += x[i]
             full = n_on * (n - n_on) <= swap_samples
             m = n_on * (n - n_on) if full else swap_samples
+            evals += n + m                  # proposals examined this iteration
             on_idx = np.empty(n_on, dtype=np.int64)
             off_idx = np.empty(n - n_on, dtype=np.int64)
             a = 0
@@ -128,7 +132,7 @@ def _tabu_f_run(n, offset, coeff, term_ptr, term_vars, var_ptr, var_terms,
                     break
         out[r] = best_x
         out_e[r] = best_e
-    return out, out_e, iters
+    return out, out_e, iters, evals
 
 
 class TabuOnF:
@@ -138,7 +142,8 @@ class TabuOnF:
 
     def __init__(self, max_iter: int = 2000, num_reads: int = 8, tenure: Optional[int] = None,
                  swap_samples: Optional[int] = None, stall: Optional[int] = None,
-                 time_limit_s: Optional[float] = None):
+                 time_limit_s: Optional[float] = None, max_proposals: Optional[int] = None):
+        self.max_proposals = max_proposals
         self.max_iter = max_iter
         self.num_reads = num_reads
         self.tenure = tenure
@@ -157,20 +162,24 @@ class TabuOnF:
         stall = self.stall if self.stall is not None else max(100, 5 * n)
         A, lo, hi, group, ng = FeasibleSA.constraint_arrays(cbp)
         starter = FeasibleSA(num_reads=self.num_reads)
-        Xs, Es, iters, batches = [], [], 0, 0
+        Xs, Es, iters, batches, evals = [], [], 0, 0, 0
         while True:
             tb = time.perf_counter()
             X0 = np.atleast_2d(x0).astype(np.int8) if (x0 is not None and batches == 0) \
                 else starter.feasible_starts(cbp, rng)
             K.seed_rng(int(rng.integers(2 ** 31)))
-            X, E, it = _tabu_f_run(cp.n, cp.offset, cp.coeff, cp.term_ptr, cp.term_vars, cp.var_ptr,
+            X, E, it, ev = _tabu_f_run(cp.n, cp.offset, cp.coeff, cp.term_ptr, cp.term_vars, cp.var_ptr,
                                    cp.var_terms, A, lo, hi, group, ng, X0, self.max_iter, tenure, swaps, stall)
             now = time.perf_counter()
             if self.time_limit_s is not None and batches > 0 and now - t0 > self.time_limit_s:
                 break
-            Xs.append(X); Es.append(E); iters += it; batches += 1
+            Xs.append(X); Es.append(E); iters += it; batches += 1; evals += ev
+            if self.max_proposals is not None:
+                if evals >= self.max_proposals:
+                    break
+                continue
             if self.time_limit_s is None or now - t0 + (now - tb) > self.time_limit_s:
                 break
         return SampleSet(np.concatenate(Xs), np.concatenate(Es), self.name, {
             "wall_time": time.perf_counter() - t0, "iterations": iters, "tenure": tenure,
-            "swap_samples": swaps, "batches": batches})
+            "swap_samples": swaps, "batches": batches, "proposals": evals})

@@ -5,7 +5,9 @@ ConstrainedQAOA is run at p=2 and then p=4 (one restart each, existing L-BFGS-B)
 seeds are drawn from the final |ψ|², and FeasibleSA runs from those seeds for the rest of
 the wall-clock budget.  Otherwise no QAOA is run and FeasibleSA is seeded from the greedy
 planner (repaired) plus random feasible plans; the result is labelled "no quantum seed".
-The split of wall-clock between QAOA and SA is logged.  ConstrainedQAOA is a state-vector
+The split of wall-clock between QAOA and SA is logged.  ``sa_proposals`` (equal-work runs)
+replaces the SA time budget by a fixed proposal count: reads of ``sa_sweeps`` sweeps are
+started from the seeds (tiled) until reads × sa_sweeps × n reaches it.  ConstrainedQAOA is a state-vector
 simulation on span(F), not a compiled circuit.
 """
 
@@ -27,7 +29,9 @@ class QaoaSeededFeasibleSA:
     name = "QAOA-seeded FeasibleSA"
 
     def __init__(self, time_limit_s: float, k_seeds: int = 4, ps=(2, 4), max_feasible: int = 4000,
-                 sa_sweeps: int = 1000, moves=("swap", "add_remove"), greedy: Optional[np.ndarray] = None):
+                 sa_sweeps: int = 1000, moves=("swap", "add_remove"), greedy: Optional[np.ndarray] = None,
+                 sa_proposals: Optional[int] = None):
+        self.sa_proposals = sa_proposals
         self.time_limit_s = time_limit_s
         self.k_seeds = k_seeds
         self.ps = tuple(ps)
@@ -68,9 +72,14 @@ class QaoaSeededFeasibleSA:
             seeds = np.array([x for x in X if cbp.is_feasible(x)[0]][: self.k_seeds], dtype=np.int8)
         t_q = time.perf_counter() - t0
         left = max(0.0, self.time_limit_s - t_q)
-        sa = FeasibleSA(num_sweeps=self.sa_sweeps, num_reads=len(seeds), time_limit_s=left)
+        if self.sa_proposals is not None:
+            reads = max(1, -(-int(self.sa_proposals) // (self.sa_sweeps * cbp.n)))
+            seeds = seeds[np.arange(reads) % len(seeds)]
+            sa = FeasibleSA(num_sweeps=self.sa_sweeps, num_reads=reads)
+        else:
+            sa = FeasibleSA(num_sweeps=self.sa_sweeps, num_reads=len(seeds), time_limit_s=left)
         ss = sa.sample_program(cbp, seed=int(rng.integers(2 ** 31)), x0=seeds)
         wall = time.perf_counter() - t0
         info.update(wall_time=wall, t_qaoa=t_q, frac_qaoa=t_q / max(wall, 1e-12),
-                    n_feasible=None if F is None else len(F))
+                    n_feasible=None if F is None else len(F), sa_proposals=ss.info["flips_attempted"])
         return SampleSet(ss.samples, ss.energies, self.name, info)

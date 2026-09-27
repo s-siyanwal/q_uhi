@@ -16,9 +16,13 @@ SA-matched is not enough. SQA is quantum-inspired PIMC, not hardware QA.
 | E10 | Unbalanced / linear penalties vs quadratic slack: dynamic range and feasibility | `ConstrainedBinaryProgram.to_penalty_model(form=...)` |
 | E11 | Native cubic HUBO vs Rosenberg QUBO: annealing gap | `annealing_spectrum` on both models |
 | E12 (executed) | Comparable-performance bakeoff at matched wall-clock T* on a hard mix+equity family H and a park control C; FeasibleSQA, QAOA-seeded FeasibleSA, Tabu-on-F added | `scripts/run_experiments.py --only E12` |
+| E12b (executed) | Ablation of E12: tight clock (FeasibleSA's own wall) and equal proposal count W\* | `--only E12b` |
+| E13 (executed) | One LST-shaped 16×16 tile (hot core, scarce core lots, equity, tight budget) | `--only E13` |
 | ANIM | GIFs of each method in its own search space and of the incumbent's temperature field | `quhi.analysis.animate`, `--only ANIM` |
 
-Results: `results/E8_mixers`, `results/E8b_depth` … `results/E11_pubo_gap`, `results/ANIM`, `results/E12_comparable`; write-up in `docs/RESULTS.md`.
+Results: `results/E8_mixers`, `results/E8b_depth` … `results/E11_pubo_gap`, `results/ANIM`, `results/E12_comparable`, `results/E12b_ablation`, `results/E13_tile`; write-up in `docs/RESULTS.md`.
+
+**Methods are frozen after E12b/E13; no E14 solver.** FeasibleSQA ties FeasibleSA at equal proposals and does not beat HiGHS; gate-model QAOA stays below the bar.
 
 Legacy material (`UHIP_Quantum-main.zip`, root `*.docx`, `RESEARCH_EXECUTION_SUMMARY.md`,
 the other root summaries) must not be used as a scientific source; see `docs/AUDIT.md`.
