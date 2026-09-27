@@ -38,3 +38,23 @@ def test_qaoa_seeded_sa_proposal_budget():
                               sa_proposals=10 * 100 * cbp.n).sample_program(cbp, seed=0)
     assert ss.info["sa_proposals"] == 10 * 100 * cbp.n and len(ss.samples) == 10
     assert cbp.is_feasible(ss.samples).all()
+
+
+def test_sample_cqm_skips_without_token(monkeypatch):
+    import socket
+    import sys
+
+    from quhi.solvers.cqm import sample_cqm
+
+    monkeypatch.delenv("DWAVE_API_TOKEN", raising=False)
+    monkeypatch.setitem(sys.modules, "dwave", None)          # any import of dwave would raise
+    monkeypatch.setitem(sys.modules, "dwave.system", None)
+
+    def no_network(*a, **k):
+        raise AssertionError("network call attempted")
+
+    monkeypatch.setattr(socket.socket, "connect", no_network)
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    prob, cbp = _mix()
+    ss, status = sample_cqm(cbp)
+    assert ss is None and status == "skipped: no DWAVE_API_TOKEN"

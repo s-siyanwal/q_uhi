@@ -3,14 +3,16 @@
 ``cqm_spec`` needs no dependency: it returns the objective polynomial and every constraint
 (linear budget / equity rows and one-hot "at most one" groups) as plain data, and
 ``spec_is_feasible`` checks a plan against it.  ``to_cqm`` builds a ``dimod.CQM`` from the
-same spec when dimod is importable.  No sampler is called from this package: running a
-hosted hybrid solver needs dimod, dwave-system and an API token, none of which this
-environment has, so no D-Wave result is reported anywhere.
+same spec when dimod is importable.  ``sample_cqm`` is a skip-hook for Leap's hybrid CQM
+solver: it returns ``(None, "skipped: ...")`` unless ``DWAVE_API_TOKEN`` (or ``token``) is set and
+dwave-system is installed.  It only ever submits the CQM (native constraints); it never builds a
+slack-penalty QUBO for a QPU.  No D-Wave result is reported anywhere in this repository.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List
+import os
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -62,3 +64,34 @@ def to_cqm(cbp: ConstrainedBinaryProgram):
         cqm.add_constraint(lhs <= c["rhs"] if c["sense"] == "<=" else
                            (lhs >= c["rhs"] if c["sense"] == ">=" else lhs == c["rhs"]), label=c["label"])
     return cqm
+
+
+def sample_cqm(cbp: ConstrainedBinaryProgram, token: Optional[str] = None, label: str = "quhi",
+               time_limit: Optional[float] = None) -> Tuple[Optional[object], str]:
+    """Submit ``to_cqm(cbp)`` to LeapHybridCQMSampler.  Returns (SampleSet | None, status).
+
+    Without a token nothing is imported and no network call is made.  Returned plans are
+    re-scored with ``cbp`` (objective and feasibility) rather than trusting the solver's flags.
+    """
+    token = token or os.environ.get("DWAVE_API_TOKEN")
+    if not token:
+        return None, "skipped: no DWAVE_API_TOKEN"
+    if not cbp.objective.is_quadratic:
+        return None, "skipped: objective degree > 2 (CQM needs a quadratic objective)"
+    try:
+        from dwave.system import LeapHybridCQMSampler
+    except ImportError:
+        return None, "skipped: dwave-system not installed (pip install -e .[dwave])"
+    from .base import SampleSet
+
+    kw = {"label": label}
+    if time_limit is not None:
+        kw["time_limit"] = time_limit
+    res = LeapHybridCQMSampler(token=token).sample_cqm(to_cqm(cbp), **kw)
+    order = [res.variables.index(i) for i in range(cbp.n)]
+    X = np.asarray(res.record.sample)[:, order].astype(np.int8)
+    feas = cbp.is_feasible(X)
+    return SampleSet(X, cbp.objective_values(X), "LeapHybridCQM", {
+        "feasible": feas, "timing": dict(res.info.get("timing", {})), "problem_id": res.info.get("problem_id"),
+    }), f"sampled: {len(X)} plans, {int(feas.sum())} feasible"
+

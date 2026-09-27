@@ -1,5 +1,8 @@
 # Initial results
 
+## Paper
+The paper skeleton built from these results is [docs/PAPER.md](PAPER.md). E12's FeasibleSQA result should be read together with the E12b ablation (see the E12 erratum).
+
 All numbers come from `python scripts/run_experiments.py` (seeded; environment recorded in
 `results/env.json`: Python 3.11, numpy 2.4, scipy 1.17 / HiGHS, numba 0.67, 4-core container,
 all solvers single-threaded). Raw rows are in `results/E*/…_raw.csv`, summaries in `…_summary.csv`,
@@ -536,6 +539,8 @@ The safe-Λ slack QUBO and the Rosenberg QUBO are not contestants.
 **Family C (control).** All nine methods except the X-mixer control reach benefit 1.000 with P(opt) = 1, and so does the greedy planner (C is the submodular park case where greedy ≈ MILP). The X-mixer penalty QAOA scores 0.17 because 5 of its 6 runs exceed 1.5 T\* = 0.2 s. FeasibleSQA's H result is not a C-only win: on C every method is at 1.000.
 
 **E13 (real-shaped 16×16 tile)** was skipped in this pass; it was run later (see E13 below).
+
+**Erratum (after E12b).** E12's FeasibleSQA benefit of 0.981 used 3.6× the proposals of FeasibleSA (4.66M vs 1.30M per run). At equal proposals (E12b), FeasibleSQA scores 0.983, below FeasibleSA's 0.988. Do not cite E12 as a quantum-inspired win. The COMPARABLE verdict above stands as defined, but FeasibleSA and Tabu-on-F pass the same bar.
 
 ## What is still not hardware
 - **FeasibleSQA** is path-integral Monte Carlo on the feasible set: a classical sampler of a Trotterised transverse field whose slices are restricted to F. It is validated against the exact single-qubit ⟨σz⟩ (`tests/test_feasible_sqa.py`). It is not a model of an annealer, and no annealer implements a transverse field restricted to F.

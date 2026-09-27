@@ -1,6 +1,9 @@
 # UHIP_Quantum
 A repo for the research paper for quantum UHIP.
 
+## Paper
+The paper skeleton is **[docs/PAPER.md](docs/PAPER.md)**. It is a negative result: constraint encodings, not annealers, decide the outcome, and HiGHS certifies every benchmark instance. Legacy files are provenance only ([docs/LEGACY.md](docs/LEGACY.md)).
+
 ## `quhi`: a QUBO/HUBO simulation toolkit for urban heat island planning
 
 `quhi` turns urban-heat-island (UHI) mitigation planning into **QUBO** and **HUBO** problems.
@@ -22,7 +25,7 @@ See **[docs/AUDIT.md](docs/AUDIT.md)**. `quhi` is a clean re-implementation that
 
 ```bash
 pip install -e .[dev]          # numpy, scipy (HiGHS MILP), numba, matplotlib, pandas, pytest
-pytest                         # 108 tests, ~20 s
+pytest                         # 133 tests
 python examples/quickstart.py  # end-to-end demo, ~1 min, writes examples/output/*.png
 python scripts/run_experiments.py [--only E3] [--quick]   # regenerate results/
 python scripts/run_experiments.py --only ANIM             # GIFs in results/ANIM/ (Pillow)
