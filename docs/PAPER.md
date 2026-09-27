@@ -4,6 +4,8 @@
 `results/*/summary.csv` or `results/*/e*.md`; numbers not found there are omitted. Methods
 are frozen after E12b/E13.*
 
+**PDFs.** LaTeX sources are in `latex/` (see `latex/README.md`). The compiled IEEE conference paper, Springer LNCS paper and full report are `results/papers/ieee_quhi.pdf`, `results/papers/springer_quhi.pdf` and `results/papers/quhi_full_report.pdf`. All three use the same facts as this skeleton.
+
 ## Abstract
 We site parks, water and cool pavement on synthetic 50 m city grids. Each instance is a
 constrained binary program, encoded as a QUBO or HUBO and scored on exact cooling physics

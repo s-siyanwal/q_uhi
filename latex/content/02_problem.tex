@@ -1,0 +1,30 @@
+Following the Sanya green-space study~\cite{zhou2023}, a city is a grid of $50\times50$\,m cells
+with fixed land uses. A decision variable $x_v\in\{0,1\}$, $v=(i,o)$, places option
+$o\in\{\text{park},\text{water},\text{cool pavement}\}$ on candidate cell $i$. The cooling that
+option $o$ at cell $i$ delivers to target cell $k$ is $e_{ik}=A_o\exp(-d_{ik}/L_o)$, with
+illustrative defaults $A=1.5$\,\degC{}, $L=100$\,m (park), $A=2.0$\,\degC{}, $L=80$\,m (water) and
+$A=0.6$\,\degC{}, $L=30$\,m (cool pavement), at costs of 3, 5 and 1 units.
+
+\paragraph{Saturation.} Overlapping cool islands do not add without limit. We use
+\begin{equation}
+\Delta T_k(x)=\Delta T_{\max}\Bigl[1-\prod_v\bigl(1-p_{kv}x_v\bigr)\Bigr],\qquad
+p_{kv}=\min(e_{kv},\Delta T_{\max})/\Delta T_{\max},
+\label{eq:sat}
+\end{equation}
+with $\Delta T_{\max}=3$\,\degC{}. The objective is the exposure-weighted temperature
+$f(x)=\sum_k w_k\bigl(T^0_k-\Delta T_k(x)\bigr)$, $w_k=0.7\,\mathrm{pop}_k/\sum\mathrm{pop}+0.3/N$.
+Inclusion--exclusion truncated at order $K$ gives an additive model ($K{=}1$), a \QUBO{} ($K{=}2$)
+or a cubic \HUBO{} ($K{=}3$). By the Bonferroni inequalities the \QUBO{} is a pessimistic bound on
+the exact objective. An optional park-block synergy adds a quartic term for every complete
+$2\times2$ block of parks.
+
+\paragraph{Constraints.} An integer budget $\sum_v c_o x_v\le B$; at most one option per cell;
+and, optionally, at least one intervention per district (equity). With one option per cell and no
+equity, $-f$ is monotone submodular, so the cost-benefit greedy planner has a
+$(1-1/e)$ guarantee~\cite{nemhauser1978}; any quantum claim must therefore beat greedy and MILP,
+not only SA.
+
+\paragraph{Scoring.} $\btrue$ is the exact-physics cooling of a returned plan divided by that of
+the MILP plan; an infeasible plan scores 0. Because MILP certifies the $K{=}2$ surrogate and not
+Eq.~\eqref{eq:sat}, $\btrue$ can slightly exceed 1. $\Popt$ is the fraction of runs (or the exact
+probability, for QAOA) that return the certified optimum.

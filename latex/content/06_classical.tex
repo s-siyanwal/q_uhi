@@ -1,0 +1,23 @@
+The classical bar consists of HiGHS~\cite{huangfu2018} on the constrained program, the
+cost-benefit greedy planner, penalty-\QUBO{} SA~\cite{kirkpatrick1983} and
+Tabu~\cite{glover1989}, and two feasible-space methods that never leave $\Fset$:
+\emph{FeasibleSA} (Metropolis with add/remove and swap moves on $f$, no $\Lam$) and
+\emph{Tabu-on-F}.
+
+\paragraph{E3 (penalty QUBO, safe $\Lam$).} Tabu is the strongest sampler on single-intervention
+\QUBO{}s ($\Popt=1.00$ up to 27 variables, 0.66 at 46). On the mix + equity family, no
+penalty-\QUBO{} sampler reaches the optimum on raw reads. SQA's $+0.02$--$0.03$ benefit over
+flip-matched SA costs about 2.4$\times$ the wall time.
+
+\paragraph{Greedy.} The greedy planner is optimal on 8 of 15 park instances (worst gap
+0.037\,\degC{}), but it ignores equity and is infeasible on 5 of 9 mix instances in E3 and on 6 of 9
+family-H instances in E12.
+
+\paragraph{E7 showcase.} On a $14\times14$ city with 81 decision variables, MILP certifies in
+10.8\,s and lowers the exposure temperature from 32.311 to 31.141\,\degC{}; the greedy planner
+returns the same plan.
+
+\paragraph{HiGHS wall-clock.} 3.8\,s on average for the E9 mix + equity cities; 0.81\,s on
+average (2.29\,s at most) for E12 family H; 0.77\,s on average in E12b; 1.67\,s for the E13 tile.
+Certification slows above about 60 dense decision variables (a $20\times20$ pilot was not certified
+in 120\,s).

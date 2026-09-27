@@ -1,0 +1,48 @@
+\chapter{Legacy findings in detail}\label{app:legacy}
+\section*{F1 (critical): inequalities as equalities, in raw m$^2$}
+\code{core/qubo\_formulation/constraint\_penalty.py} implements $\sum a_ix_i\le A_{\max}$ as
+$P(\sum a_ix_i-A_{\max})^2$, an equality penalty that punishes plans using less than the budget.
+With $a_i=2500$\,m$^2$, the coefficient ratio in the legacy $4\times4$ green-layout problem is
+$|Q|_{\max}=1.72\times10^{9}$ against $|Q_{\mathrm{phys}}|_{\max}=2.0$ ($8.6\times10^{8}$). At an area
+fraction of 0.33 (3.63 cells) the global minimum selects 4 cells $=10{,}000$\,m$^2>9{,}075$\,m$^2$,
+which is infeasible. \emph{Fix:} integer data, bounded slack bits, $\ge$ constraints with negative
+slack. Evidence: \code{audit.json} \code{A2}.
+
+\section*{F2 (critical): shipped results are artefacts}
+The legacy results report penalty magnitudes as \QUBO{} energies, an SQA energy of 0.0 with an
+all-zero plan, and a ``best algorithm'' chosen on differences in the eighth significant digit. They
+say nothing about UHI mitigation or quantum versus classical methods and are not cited. Evidence:
+\code{A6}.
+
+\section*{F3 (critical): SQA at the wrong temperature}
+The legacy action uses $\sum_kE(s^k)-J_\tau\sum ss$ with acceptance $\exp(-\beta\Delta E)$; the
+Suzuki--Trotter action has $\beta/P$ on each slice's problem term. The legacy sampler is $P$ times too
+cold with a transverse field effectively $P$ times too weak: $\langle\sigma_z\rangle=-0.997$ against the
+exact $-0.545$. Evidence: \code{A3}; unit test \code{tests/test\_solvers.py}.
+
+\section*{F4 (major): Theorem IV.1 false as stated}
+$\Lam>f_{\max}-f_{\min}$ needs every violation to satisfy $g(x)^2\ge1$, which holds only for integer
+data. Counter-example: minimise $-x_0-x_1$ subject to $0.6x_0+0.6x_1\le1$ with $\Lam=2.02$; the
+penalised minimiser $(1,1)$ is infeasible (violation$^2=0.04$). The corrected statement,
+$\Lam>f^\ast-L(f)$ with integer data and slack bits, is proved in \code{docs/BACKGROUND.md} \S2 and
+certified by E1. Evidence: \code{A4}.
+
+\section*{F5 (major): automatic penalty weight is not a bound}
+The legacy estimate $\sum|\lambda_i(Q)|$ of the range of $x^TQx$ can be too small by a factor $n$:
+$Q=\mathbf{1}$, $n=10$ gives 10 while $\max x^TQx=100$. Evidence: \code{A7}.
+
+\section*{F6 (major): broken QUBO$\leftrightarrow$Ising round trip}
+Off-diagonals are built as $-4J_{ij}$ on both triangles of a symmetric $Q$, doubling every coupling:
+$\begin{pmatrix}1&-2&0\\-2&3&-1\\0&-1&2\end{pmatrix}$ returns as
+$\begin{pmatrix}1&-4&0\\-4&3&-2\\0&-2&2\end{pmatrix}$. \code{quhi} uses one canonical sparse polynomial
+and exports upper-triangular $Q$ only. Evidence: \code{A1}.
+
+\section*{F7 (major): wrong worked examples and known optima}
+A symmetric example matrix read as $x^TQx$ doubles couplings and selects one cell where two are
+required; Theorem II.3's proof sets $Q_{ii}=c_i/2$ instead of $c_i$; and a 4-cell benchmark claims the
+optimum $[0,1,1,0]$ with energy $-19.25$, whereas $f([0,1,1,0])=-5$ and $[1,0,1,0]$ gives $-6$.
+Evidence: \code{A5}.
+
+\section*{F8: other issues}
+See Chapter~\ref{sec:audit}: inconsistent sign of the pairwise physics, 19 failing legacy tests,
+qiskit-only QAOA/VQE modules, missing seeds, and a scaling argument that does not transfer.

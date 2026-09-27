@@ -1,0 +1,18 @@
+\paragraph{Success criterion.} The criterion of Section~\ref{sec:intro} is not met by gate-model
+QAOA: with penalties it learns the constraint rather than the objective (E6, E8b), and with
+constraint-preserving mixers it remains well below FeasibleSA and MILP at every depth we simulated
+(E8, E8b, E12). Feasible-space PIMC meets a 0.95 bar relative to the best classical method, but it
+only ties feasible-space SA, and at equal proposals it is slightly behind (E12b).
+
+\paragraph{What decided the outcome.} Each step that improved a quantum or quantum-inspired method
+was a change of \emph{encoding}: certified but gentler penalties (E1, E4, E10), native higher-order
+terms instead of quadratisation (E5, E11), and moves or mixers that respect the constraints (E8,
+E12). Each of those changes helped the classical methods at least as much. The objective's
+submodularity makes greedy strong wherever equity does not bind, and HiGHS certifies every
+benchmark instance quickly.
+
+\paragraph{What hardware could still test.} A fair hardware test would submit the constrained
+model natively, as a CQM to a hybrid solver, on the E8b ``exactly 3'' city (seed 4) and a family-C
+park city (seed 100). A safe-$\Lam$ slack \QUBO{} should never be sent to a QPU, because its gap is
+set by $\Lam$ (E6, E11). The repository contains a hook that is inactive without an API token; no
+D-Wave result exists.

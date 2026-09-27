@@ -1,0 +1,20 @@
+Quantum and quantum-inspired optimisers are often proposed for spatial planning problems that can
+be written as \QUBO{}s. Urban-heat-island (UHI) mitigation is one such problem: choose where to put
+parks, water bodies and cool pavement on a city grid, under a budget and an equity requirement, so
+that the population-weighted air temperature is as low as possible. This work asks a narrow
+question: \emph{on certified instances and at matched effort, does any quantum or quantum-inspired
+method reach the benefit of the classical baselines?}
+
+We answer it with a clean re-implementation, the \code{quhi} toolkit, after an audit found that an
+earlier code base produced penalty artefacts rather than results
+(Section~\ref{sec:audit}). Every plan is scored on the exact saturating cooling physics and
+compared with a HiGHS-certified optimum~\cite{huangfu2018}. The success criterion was fixed in
+advance: a method is at par only if, at matched wall-clock on certified instances, it meets the
+greedy planner \emph{and} the MILP on both instance families. Matching simulated annealing is not
+enough.
+
+The answer is negative, and the reasons are specific. The encoding decides most of the outcome:
+slack penalties set the annealing gap, Taylor truncation distorts long-reach cooling, and
+quadratisation hides native higher-order structure. Once constraints are handled natively, a
+feasible-space classical annealer is as good as the best quantum-inspired sampler we built, and
+HiGHS certifies every hard instance in about a second.

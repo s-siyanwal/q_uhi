@@ -1,0 +1,24 @@
+\paragraph{FeasibleSQA.} Path-integral Monte Carlo~\cite{martonak2002} with $P=8$ Trotter slices,
+each a feasible plan, samples
+$\pi(X)\propto\exp\bigl(-\tfrac{\beta}{P}\sum_k f(x^k)+J\sum_{k,i}s^k_is^{k+1}_i\bigr)$ with
+$J=\tfrac12\ln\coth(\beta\Gamma/P)$, using the FeasibleSA moves on one slice at a time. It
+reproduces the exact single-qubit $\langle\sigma_z\rangle$ and is quantum-\emph{inspired}: no
+annealer implements a transverse field restricted to $\Fset$~\cite{heim2015}.
+
+\paragraph{E12: matched wall-clock.} Family H has 9 instances ($8\times8$, $10\times10$,
+$12\times12$ cities, seeds 100--102) with three intervention types, budget equal to the grid side,
+equity, and a quartic synergy on the two larger sizes. Each method gets $\Tstar$ per run, the
+larger of default FeasibleSA's median wall-clock and HiGHS's (capped at 8\,s). The pre-committed
+COMPARABLE rule requires $P(\mathrm{feas})=1$, a family-mean benefit of at least 0.95$\times$ the
+best classical mean, and no run over $1.5\,\Tstar$. FeasibleSQA passes with 0.981
+(Table~\ref{tab:e12}), but FeasibleSA (0.973) and Tabu-on-F (0.976) pass the same bar, MILP reaches
+1.000 in 0.81\,s, and the QAOA contestants do not qualify.
+
+\paragraph{E12b: the ablation.} HiGHS was faster than default FeasibleSA on every instance, so
+E12's $\Tstar$ was FeasibleSA's own time and there was no padding. The difference was work:
+FeasibleSQA rejects moves that would leave $\Fset$ before evaluating $f$, so in the same wall-clock
+it made 3.6$\times$ as many proposals (4.66\,M against 1.30\,M per run). Giving every method the
+same proposal budget $\Wstar$ (4.53\,M per run on average) reverses the order: FeasibleSA 0.988,
+FeasibleSQA 0.983, Tabu-on-F 0.977 (Table~\ref{tab:e12b}). FeasibleSQA stays within 5\% of
+FeasibleSA (it is ahead on 1 instance, tied on 6, behind on 2) but does not beat it. E12 must not be
+cited as a quantum-inspired win.

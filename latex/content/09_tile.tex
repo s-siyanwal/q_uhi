@@ -1,0 +1,9 @@
+E13 builds one land-surface-temperature-shaped $16\times16$ tile: a compact hot core with a cool
+edge, population concentrated on the core, and only 2 candidate lots left inside the core. With
+three intervention types, equity and a budget of 16 it has $n=108$ and $|\Fset|>4000$, so
+ConstrainedQAOA cannot be simulated. At a tight clock of 68.59\,s per run (Table~\ref{tab:e13}),
+HiGHS certifies the tile in 1.67\,s and the greedy planner is infeasible on equity, the same failure
+as on family H. The weak-penalty hybrid ($0.01\,\Lsafe$ + repair) finds the optimum on both seeds,
+FeasibleSQA averages 0.9998 and FeasibleSA 0.9569 on two seeds each; by E12b a tight-clock
+comparison hands FeasibleSQA several times more proposals, so this gap is not evidence of an
+advantage. The mask created no classical gap.

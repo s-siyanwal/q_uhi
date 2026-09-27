@@ -1,0 +1,13 @@
+% typed from docs/RESULTS.md (E7; source results/E7_showcase/summary.json)
+\begin{tabular}{lccccc}
+\toprule
+plan & feasible & exposure $T$ (\degC) & pop.-weighted cooling & interventions & time \\
+\midrule
+baseline & -- & 32.311 & -- & 0 & -- \\
+MILP (certified optimal) & yes & 31.141 & 1.231\,\degC & 8 parks & 10.8\,s \\
+Greedy planner & yes & 31.141 (same plan) & 1.231\,\degC & 8 parks & $<1$\,s \\
+SA + pp & yes & 31.230 & 1.140\,\degC & 10 & 12.4\,s \\
+SQA + pp & yes & 31.230 (same plan as SA) & 1.140\,\degC & 10 & 32.1\,s \\
+Tabu + pp & yes & 31.459 & 0.891\,\degC & 14 & 10.8\,s \\
+\bottomrule
+\end{tabular}

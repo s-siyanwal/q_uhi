@@ -1,0 +1,150 @@
+\documentclass[runningheads]{llncs}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs,array}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{../figs/}}
+\input{../shared/macros}
+
+\begin{document}
+\title{Constraint Encodings, Not Annealers, Dominate QUBO/HUBO Siting for Urban Heat-Island Interventions}
+\titlerunning{Constraint encodings dominate QUBO/HUBO siting for UHI}
+\author{The \texttt{quhi} project}
+\authorrunning{The \texttt{quhi} project}
+\institute{Repository \repo{}, commit \sha}
+\maketitle
+
+\begin{abstract}
+\input{../shared/abstract}
+\keywords{QUBO \and HUBO \and penalty encoding \and QAOA \and path-integral Monte Carlo \and urban heat island \and negative result}
+\end{abstract}
+
+%----------------------------------------------------------------------
+\section{Introduction}\label{sec:intro}
+This is a benchmarking study with a pre-registered bar and a negative outcome.
+\input{../content/01_intro}
+
+\noindent\textbf{Contributions.} (i) A certified slack-penalty encoding with a bound about
+$2\times$ tighter than the textbook one, verified exhaustively (E1). (ii) Evidence that surrogate
+order and quadratisation, not the sampler, dominate solution quality (E2, E5, E11). (iii) A
+depth curve for constraint-preserving QAOA against feasible-space SA (E8b). (iv) An equal-work
+ablation showing that a feasible-space PIMC sampler's apparent lead is an artefact of extra
+proposals (E12b).
+
+%----------------------------------------------------------------------
+\section{The Siting Problem}\label{sec:problem}
+We keep the physics deliberately simple and the evaluation deliberately strict.
+\input{../content/02_problem}
+
+%----------------------------------------------------------------------
+\section{A Cautionary Audit}\label{sec:audit}
+Negative results are only credible if earlier positive-looking numbers are explained.
+\input{../content/03_audit}
+
+\begin{table}[t]
+\centering\caption{Legacy audit findings (from \texttt{docs/AUDIT.md}).}\label{tab:audit}
+\scriptsize\input{../tables/audit}
+\end{table}
+
+%----------------------------------------------------------------------
+\section{Encodings}\label{sec:enc}
+Four encoding choices were tested before any quantum method was run.
+\input{../content/04_encodings}
+
+\begin{table}[t]
+\centering\caption{E1: penalty-\QUBO{} ground state versus MILP optimum on 11 exhaustively enumerated instances.}\label{tab:e1}
+\resizebox{\textwidth}{!}{\input{../tables/e1}}
+\end{table}
+
+%----------------------------------------------------------------------
+\section{Surrogates}\label{sec:sur}
+How the saturating law is turned into a polynomial matters more than which sampler minimises it.
+\input{../content/05_surrogates}
+
+\begin{table}[t]
+\centering\caption{E2: share of the achievable cooling lost by each surrogate's optimum, scored on the exact law.}\label{tab:e2}
+\small\input{../tables/e2}
+\end{table}
+
+%----------------------------------------------------------------------
+\section{The Classical Bar}\label{sec:classical}
+A quantum method has to beat these baselines, not only simulated annealing.
+\input{../content/06_classical}
+
+\begin{table}[t]
+\centering\caption{E3: median raw success per read on safe-penalty \QUBO{}s.}\label{tab:e3}
+\resizebox{\textwidth}{!}{\input{../tables/e3}}
+\end{table}
+
+%----------------------------------------------------------------------
+\section{Gate-Model and Analog Simulations}\label{sec:quantum}
+All quantum results in this paper are exact classical simulations of small systems.
+\input{../content/07_quantum}
+
+\begin{table}[t]
+\centering\caption{E6: 14-qubit final gap and QAOA optimum probability versus penalty weight.}\label{tab:e6}
+\small\input{../tables/e6}
+\end{table}
+
+\begin{table}[t]
+\centering\caption{E8b: exact $\Popt$ versus depth, mean [min--max] over three ``exactly 3 parks'' cities, with classical references.}\label{tab:e8b}
+\resizebox{\textwidth}{!}{\input{../tables/e8b}}\\[6pt]
+\small\input{../tables/e8b_ref}
+\end{table}
+
+\begin{figure}[t]
+\centering\includegraphics[width=0.7\textwidth]{p_opt_vs_p.png}
+\caption{E8b: $\Popt$ versus QAOA depth for complete and ring Dicke-XY mixers and the X-mixer penalty control.}\label{fig:e8b}
+\end{figure}
+
+%----------------------------------------------------------------------
+\section{Feasible-Space Path-Integral Monte Carlo}\label{sec:pimc}
+The strongest quantum-inspired candidate is also the one whose result needs the most careful
+accounting.
+\input{../content/08_feasible_pimc}
+
+\begin{table}[t]
+\centering\caption{E12: family H at matched wall-clock $\Tstar$ (pre-committed COMPARABLE rule).}\label{tab:e12}
+\resizebox{\textwidth}{!}{\input{../tables/e12}}
+\end{table}
+
+\begin{table}[t]
+\centering\caption{E12b: family H on the tight clock and at equal proposals $\Wstar$. ``$\geq$0.95 FSA'' and ``beats'' compare with FeasibleSA on the same clock and instances.}\label{tab:e12b}
+\resizebox{\textwidth}{!}{\input{../tables/e12b}}
+\end{table}
+
+\begin{figure}[t]
+\centering\includegraphics[width=\textwidth]{e12_benefit_vs_time.png}
+\caption{E12: mean $\btrue$ versus mean wall-clock per run; dashed line: 0.95 of the best classical mean.}\label{fig:e12}
+\end{figure}
+
+%----------------------------------------------------------------------
+\section{A Land-Surface-Temperature-Shaped Tile}\label{sec:tile}
+Finally we tried to construct a case where the classical solver would struggle.
+\input{../content/09_tile}
+
+\begin{table}[t]
+\centering\caption{E13: $16\times16$ LST-shaped tile, tight clock, two sampler seeds.}\label{tab:e13}
+\small\input{../tables/e13}
+\end{table}
+
+\begin{figure}[t]
+\centering\includegraphics[width=\textwidth]{compare_final.png}
+\caption{Final plans on the E8b ``exactly 3 parks'' city (greedy, FeasibleSA, Dicke-XY $p=6$ most probable plan, MILP). Animated versions: \texttt{results/ANIM/compare\_temp\_*.gif}.}\label{fig:anim}
+\end{figure}
+
+%----------------------------------------------------------------------
+\section{Discussion}\label{sec:discussion}
+\input{../content/10_discussion}
+
+\section{Limitations}\label{sec:limitations}
+\input{../content/11_limitations}
+
+\subsubsection*{Acknowledgements.}
+\input{../shared/acknowledgements}
+
+\bibliographystyle{splncs04}
+\bibliography{../bib/refs}
+\end{document}

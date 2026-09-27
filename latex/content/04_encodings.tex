@@ -1,0 +1,20 @@
+\paragraph{Exact penalty (E1).} With integer constraint data and bounded binary slack bits, a
+penalty weight $\Lam>f^\ast-L(f)$ is sufficient, where $f^\ast$ is the constrained optimum and
+$L(f)$ any lower bound. Exhaustive enumeration of the full penalty \QUBO{} (decision plus slack
+bits) on 11 instances shows that its ground state equals the MILP optimum on all 11
+(Table~\ref{tab:e1}); $\Lsafe$ is 1.81--2.21$\times$ smaller than the range bound.
+
+\paragraph{Penalty weight (E4).} On a mix $8\times8$ + equity instance, $0.01\,\Lsafe$ followed
+by repair raises $\Popt$ after post-processing from at most 0.03 to 0.42 (SA) and 0.47 (Tabu).
+Raw feasibility collapses below about $0.1\,\Lsafe$. The recipe is hybrid, not certified.
+
+\paragraph{Penalty form (E10, quick run on 2 instances).} An unbalanced penalty at $0.1\,\Lsafe$
+needs no slack bits (10 instead of 13 variables) and cuts the dynamic range from 163 to 16.5 with
+the ground state still optimal on these instances. It is not certified in general, and the linear
+(Lagrangian) form is feasible and optimal only for lucky multipliers.
+
+\paragraph{Quadratisation (E11, quick run on 2 instances).} Rosenberg substitution
+\cite{rosenberg1975,boros2002} of a cubic \HUBO{} leaves the slack-penalty final gap unchanged
+($9.4\times10^{-5}$ and $1.1\times10^{-5}$) but adds 7 qubits (9 to 16) and lowers the short-anneal
+ground-state probability from $3.1\times10^{-3}$ to $2.4\times10^{-5}$. Removing the penalty
+altogether (a diagonal-only simulation on $\Fset$) enlarges the gap about 250$\times$.

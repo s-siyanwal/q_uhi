@@ -1,0 +1,13 @@
+We site parks, water bodies and cool pavement on synthetic 50\,m city grids. Each instance is a
+constrained binary program, encoded as a \QUBO{} or \HUBO{} and scored on exact saturating cooling
+physics against a HiGHS-certified optimum. A slack-bit penalty \QUBO{} with a corrected weight has
+the MILP optimum as its ground state on all 11 exhaustively enumerated instances. The second-order
+Taylor \QUBO{} loses 10.3\% of the achievable cooling at 300\,m reach, where the cubic \HUBO{} loses
+at most 0.02\% and a least-squares-fitted \QUBO{} at most 0.42\%. The final annealing gap scales as
+$1/\Lam$ with the penalty weight. Constraint-preserving Dicke-XY QAOA reaches a mean $\Popt$ of
+0.43 at depth 6, against 1.00 for feasible-space simulated annealing. Path-integral Monte Carlo
+restricted to the feasible set passes a pre-committed comparability bar (benefit 0.981), but it
+made 3.6$\times$ more proposals than feasible-space annealing; at equal proposals it scores 0.983
+against 0.988. HiGHS certifies every hard-family instance in 0.77\,s on average. Encodings and
+constraint handling, not the choice of annealer, decide the outcome. We observe no quantum or
+quantum-inspired advantage.

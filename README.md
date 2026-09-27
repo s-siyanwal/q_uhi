@@ -4,6 +4,8 @@ A repo for the research paper for quantum UHIP.
 ## Paper
 The paper skeleton is **[docs/PAPER.md](docs/PAPER.md)**. It is a negative result: constraint encodings, not annealers, decide the outcome, and HiGHS certifies every benchmark instance. Legacy files are provenance only ([docs/LEGACY.md](docs/LEGACY.md)).
 
+Compiled PDFs built from `latex/` (`make -C latex all`) are in `results/papers/`: an IEEE conference paper ([ieee_quhi.pdf](results/papers/ieee_quhi.pdf)), a Springer LNCS paper ([springer_quhi.pdf](results/papers/springer_quhi.pdf)) and the full experimental record ([quhi_full_report.pdf](results/papers/quhi_full_report.pdf)).
+
 ## `quhi`: a QUBO/HUBO simulation toolkit for urban heat island planning
 
 `quhi` turns urban-heat-island (UHI) mitigation planning into **QUBO** and **HUBO** problems.
