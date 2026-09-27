@@ -1,0 +1,18 @@
+The repository started from an earlier code base and a set of design documents. The audit
+(\code{docs/AUDIT.md}, reproduced by \code{scripts/audit\_legacy.py}) found that its results cannot be
+used; 19 of its 163 tests fail. The findings that matter for this paper are:
+\begin{itemize}
+\item[F1] inequality constraints encoded as equalities in raw m$^2$, giving a coefficient ratio of
+$1.72\times10^{9}$ against 2.0 and an infeasible global minimum;
+\item[F2] shipped ``results'' whose energies are penalty magnitudes, with an all-zero SQA plan;
+\item[F3] an SQA action with $\beta$ instead of $\beta/P$ on the problem term: the single-qubit
+$\langle\sigma_z\rangle$ is $-0.997$ against the exact $-0.545$ (\code{quhi}: $-0.546$);
+\item[F4] a penalty theorem that is false for non-integer data (the corrected bound is about
+$2\times$ smaller, median ratio 2.06);
+\item[F5] an automatic penalty weight that can be too small by a factor of $n$;
+\item[F6] a \QUBO{}$\leftrightarrow$Ising round trip that doubles couplings;
+\item[F7] worked examples and ``known optima'' that are wrong.
+\end{itemize}
+The legacy energies are artefacts of F1--F3 and are not cited anywhere in this work. The legacy
+material also invoked asymptotic quantum-annealing results for one-dimensional disordered
+chains~\cite{santoro2002}; those do not transfer to dense, penalty-dominated \QUBO{}s (E6).

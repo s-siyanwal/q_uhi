@@ -1,0 +1,21 @@
+% typed from docs/RESULTS.md (E8; full table: results/E8_mixers/summary_by_family.csv, appendix)
+\begin{tabular}{llrrrr}
+\toprule
+family & method & \Popt & P(feas) & benefit & wall (s) \\
+\midrule
+park & MILP & 1 & 1 & 1 & 0.09 \\
+park & Greedy planner & 0.86 & 1 & 1.00 & 0.001 \\
+park & XY-QAOA (swap+add/remove) $p{=}1$ / $p{=}2$ & 0.063 / 0.197 & 1 & 0.87 / 0.94 & 1.6 / 7.1 \\
+park & X-mixer penalty QAOA $p{=}1$ / $p{=}2$ & 0.008 / 0.011 & 0.70 / 0.80 & 0.40 / 0.51 & 0.6 / 1.1 \\
+park & FeasibleSA & 1 & 1 & 1 & 0.26 \\
+park & SA / Tabu (safe-$\Lam$ QUBO) & 0.25 / 1 & 1 & 0.96 / 1 & 0.07 / 0.02 \\
+exactly-3 & Dicke-XY complete $p{=}1$ / $p{=}2$ & 0.18 / 0.37 & 1 & 0.94 / 0.97 & 3 / 15 \\
+exactly-3 & Dicke-XY ring $p{=}1$ / $p{=}2$ & 0.04 / 0.14 & 1 & 0.88 / 0.91 & 3 / 16 \\
+exactly-3 & X-mixer penalty QAOA $p{=}1$ / $p{=}2$ & 0.004 / 0.005 & 0.45 / 0.62 & 0.35 / 0.49 & 0.2 / 0.3 \\
+mix+eq & MILP & 1 & 1 & 1 & 0.18 \\
+mix+eq & Greedy planner & 0.33 & 0.33 & 0.33 & 0.002 \\
+mix+eq & XY-QAOA $p{=}1$ / $p{=}2$ & 0.002 / 0.003 & 1 & 0.60 / 0.61 & 3.6 / 25 \\
+mix+eq & FeasibleSA & 0.39 & 1 & 0.92 & 0.79 \\
+mix+eq & SA / Tabu (safe-$\Lam$ QUBO) & 0.002 / 0 & 1.0 & 0.61 / 0.61 & 0.2 / 0.14 \\
+\bottomrule
+\end{tabular}

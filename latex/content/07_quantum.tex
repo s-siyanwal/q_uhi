@@ -1,0 +1,22 @@
+\paragraph{Analog gap (E6).} On a 14-qubit instance (10 decision and 4 slack qubits) with
+$H(s)=-(1-s)\sum X+sH_P$, the minimum gap sits at $s=1$ and scales as $1/\Lam$: $\gap=7.1\times10^{-5}$
+at $0.1\,\Lsafe$ and $7.1\times10^{-7}$ at $10\,\Lsafe$, so the adiabatic scale
+$1/\Delta^2$~\cite{albash2018} grows from $2.0\times10^{8}$ to $2.0\times10^{12}$. The
+penalty, not the instance's classical hardness, sets the energy resolution. X-mixer
+QAOA~\cite{farhi2014} at $p=6$ places only 0.17--0.19\% on the optimum; its approximation
+ratio of about 0.998 is measured on a penalty-dominated scale and is cosmetic.
+
+\paragraph{Constraint-preserving mixers (E8).} Dicke/XY and feasibility-projected
+mixers~\cite{hadfield2019} keep the state in $\mathrm{span}(\Fset)$, so $P(\mathrm{feasible})=1$ by
+construction, and $\Popt$ is 10--70$\times$ higher than X-mixer penalty QAOA at equal depth
+(``exactly 3 parks'', $p=2$: 0.37 against 0.005). On mix + equity, XY-QAOA at $p=2$ reaches
+$\Popt=0.003$ and benefit 0.61, against 0.39 and 0.92 for FeasibleSA.
+
+\paragraph{Depth (E8b).} On three ``exactly 3 parks'' cities ($n=10$, $|\Fset|=120$), Dicke-XY
+complete reaches a mean $\Popt$ of 0.427 at $p=6$ (range 0.17--0.65), against 1.000 for FeasibleSA
+in 0.21\,s (Table~\ref{tab:e8b}, Fig.~\ref{fig:e8b}). Ring-XY at $p=6$ (0.111) is below complete-XY
+at $p=1$ (0.134), and the X-mixer stays at uniform-over-$\Fset$ level (0.009 against 1/120).
+
+\paragraph{What is simulated.} ConstrainedQAOA is an exact state-vector simulation on
+$\mathrm{span}(\Fset)$ built from a dense $|\Fset|\times|\Fset|$ eigendecomposition; it is not a
+compiled circuit, and its cost is a cost of the simulation.

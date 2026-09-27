@@ -1,0 +1,10 @@
+% typed from docs/RESULTS.md (E11, quick run; source results/E11_pubo_gap/raw.csv)
+\begin{tabular}{lccc}
+\toprule
+model & qubits & final gap & P(ground), $T{=}10$ \\
+\midrule
+A: native cubic \HUBO{} + slack penalty & 9 & $9.4\times10^{-5}$ / $1.1\times10^{-5}$ & $3.1\times10^{-3}$ \\
+B: Rosenberg \QUBO{} of A & 16 & $9.4\times10^{-5}$ / $1.1\times10^{-5}$ & $2.4\times10^{-5}$ \\
+C: native \HUBO{} on $\Fset$ (diagonal only) & 6 & $2.4\times10^{-2}$ / $3.7\times10^{-3}$ & $4.5\times10^{-2}$ / $4.1\times10^{-2}$ \\
+\bottomrule
+\end{tabular}

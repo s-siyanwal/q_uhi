@@ -1,0 +1,15 @@
+% typed from docs/RESULTS.md (E4; full table: results/E4_penalty/penalty_summary.csv, appendix)
+\begin{tabular}{llrrrrr}
+\toprule
+instance & solver & $\Lam/\Lsafe$ & P(feas) raw & \Popt{} raw & \Popt{} pp & benefit pp \\
+\midrule
+mix $8\times8$ + equity & SA & 0.01 & 0.10 & 0.01 & 0.42 & 0.78 \\
+ & SA & 1 & 1.00 & 0 & 0.03 & 0.77 \\
+ & SQA & 0.01 & 0.00 & 0 & 0.29 & 0.94 \\
+ & SQA & 1 & 1.00 & 0 & 0.01 & 0.89 \\
+ & Tabu & 0.01 & 0.20 & 0.01 & 0.47 & 0.83 \\
+ & Tabu & 1 & 1.00 & 0 & 0 & 0.71 \\
+park $12\times12$ & all & $\le0.03$ & $\le0.15$ & $\approx0$ & 1.00 & 1.00 \\
+ & Tabu & $\ge0.1$ & 1.00 & 0.97--0.99 & 1.00 & 1.00 \\
+\bottomrule
+\end{tabular}

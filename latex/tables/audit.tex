@@ -1,0 +1,14 @@
+% typed from docs/AUDIT.md
+\begin{tabular}{lp{0.36\linewidth}p{0.46\linewidth}}
+\toprule
+& finding & evidence (docs/AUDIT.md, results/audit/audit.json) \\
+\midrule
+F1 & inequalities encoded as equalities, in raw m$^2$ & $|Q|_{\max}=1.72\times10^{9}$ vs $|Q_{\text{phys}}|_{\max}=2.0$; infeasible global minimum \\
+F2 & shipped ``results'' are artefacts & energies are penalty magnitudes; SQA returns the all-zero plan \\
+F3 & SQA uses $\beta$ instead of $\beta/P$ & $\langle\sigma_z\rangle$: exact $-0.545$, \code{quhi} $-0.546$, legacy $-0.997$ \\
+F4 & penalty theorem false for non-integer data & counter-example; corrected bound about $2\times$ smaller (median 2.06) \\
+F5 & automatic penalty weight not a bound & too small by up to a factor $n$ ($Q=\mathbf{1}$, $n=10$: 10 vs 100) \\
+F6 & \QUBO{}$\leftrightarrow$Ising round trip doubles couplings & round trip returns doubled off-diagonals \\
+F7 & wrong worked examples and ``known optima'' & claimed $-19.25$ where $f=-5$ and the optimum is $-6$ \\
+\bottomrule
+\end{tabular}

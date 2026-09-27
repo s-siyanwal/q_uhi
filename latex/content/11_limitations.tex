@@ -1,0 +1,12 @@
+\begin{itemize}
+\item \textbf{Synthetic cities.} All cities and the E13 tile are synthetic; no Landsat LST or census
+layers were used, and intervention amplitudes and decay lengths are illustrative.
+\item \textbf{Surrogate physics.} The saturation law stands in for CFD or ENVI-met; MILP certifies the
+$K{=}2$ surrogate, not the exact physics.
+\item \textbf{PIMC $\neq$ QPU.} SQA and FeasibleSQA are classical Monte Carlo samplers~\cite{heim2015}.
+\item \textbf{Simulated circuits.} ConstrainedQAOA is a subspace simulation on $\mathrm{span}(\Fset)$,
+not a compiled circuit, and X-mixer QAOA is limited to $\le16$ qubits.
+\item \textbf{No hardware numbers.} No D-Wave, Leap or other cloud result is reported.
+\item \textbf{Small samples.} Three instances $\times$ two seeds per E12/E12b cell; E10 and E11 are quick
+runs on two instances.
+\end{itemize}

@@ -1,0 +1,488 @@
+\documentclass[11pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage[margin=2.1cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs,longtable,array}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{../figs/}}
+\input{../shared/macros}
+\setlength{\parskip}{0.3em}
+\setlength{\parindent}{0pt}
+
+\newcommand{\plainbox}[1]{\par\medskip\noindent\fcolorbox{black!40}{black!4}{\begin{minipage}{0.965\linewidth}\textbf{In plain language.} #1\end{minipage}}\par\medskip}
+\newcommand{\specbox}[1]{\par\medskip\noindent\fcolorbox{blue!40}{blue!3}{\begin{minipage}{0.965\linewidth}\textbf{For specialists.} #1\end{minipage}}\par\medskip}
+\newcommand{\exphead}[4]{\paragraph{Question.} #1\par\paragraph{Setup.} #2\par\paragraph{Output.} #3\par\paragraph{Reproduce.} \code{python scripts/run\_experiments.py --only #4}\par}
+
+\begin{document}
+\begin{titlepage}
+\centering
+{\LARGE\bfseries Constraint encodings, not annealers, dominate QUBO/HUBO siting for urban heat-island interventions\par}
+\vspace{1em}
+{\Large Full experimental record\par}
+\vspace{2em}
+Repository \repo{}, branch \code{claude/clever-gates-ezote4}, commit \sha\par
+Built \today\par
+\vspace{2em}
+\begin{minipage}{0.85\linewidth}
+\textbf{Abstract.} \input{../shared/abstract}
+\end{minipage}
+\vfill
+\begin{minipage}{0.85\linewidth}\small
+\textbf{Success criterion} (fixed in \code{docs/NEXT.md} before the quantum experiments). A quantum or
+quantum-inspired method is ``at par'' only if, at matched wall-clock on certified instances, its
+benefit ratio (exact physics) and $\Popt$ meet the \emph{greedy planner and HiGHS MILP} on
+\emph{both} the park and the mix + equity families. Matching SA or SA-matched is not enough. SQA is
+quantum-inspired PIMC, not hardware quantum annealing.
+
+\textbf{Verdict.} Not met. Gate-model QAOA stays below the bar; feasible-space PIMC ties
+feasible-space SA and does not beat HiGHS. No D-Wave or other hardware numbers exist in this
+repository.
+\end{minipage}
+\end{titlepage}
+
+\tableofcontents
+
+%======================================================================
+\chapter*{How to read this report}
+\addcontentsline{toc}{chapter}{How to read this report}
+This is the exhaustive record behind the two short papers. Every number in it is copied from
+\code{docs/RESULTS.md}, \code{docs/AUDIT.md}, \code{docs/NEXT.md}, \code{docs/PAPER.md}, or a
+\code{results/*/summary.csv} / \code{e*.md} file; tables marked ``generated'' are produced from the
+committed CSVs by \code{latex/tools/make\_tables.py}. No experiment was rerun to produce this
+document. Each experiment chapter has the same structure: \emph{question}, \emph{setup},
+\emph{output files}, a \emph{table} from the official summary, and a \emph{reading}.
+Two kinds of boxes appear:
+\plainbox{a two- or three-sentence summary for readers who are not optimisation specialists.}
+\specbox{details that matter for reproducing or judging the result (definitions, caveats,
+what is and is not simulated).}
+
+%======================================================================
+\chapter{Introduction and problem}\label{sec:intro}
+\section{Why this study}
+\input{../content/01_intro}
+\plainbox{We asked whether quantum or quantum-inspired computers help decide where to put parks,
+water and cool pavement in a hot city. On every test we ran, a standard classical solver found the
+provably best plan in about a second, and the best quantum-inspired method was no better than an
+ordinary classical search that respects the rules.}
+
+\section{The planning problem}
+\input{../content/02_problem}
+\specbox{The \QUBO{} ($K{=}2$) objective is a Bonferroni lower bound on the exposure temperature,
+so it is pessimistic; each extra order tightens the bracket. MILP certifies the \emph{surrogate}
+optimum, and all benefits are measured on the \emph{exact} law, which is why values slightly above
+1 occur (for example 1.0001 for greedy on park instances in E8).}
+
+\section{Instance families}
+\begin{itemize}
+\item \textbf{Park family} (E3, E8): park only, budget constraint, no equity.
+\item \textbf{Mix + equity family} (E3, E8, E9): park, water and cool pavement, at least one intervention per district.
+\item \textbf{``Exactly 3 parks''} (E8, E8b): $7\times7$ park cities with a cardinality constraint, $n=10$, $|\Fset|=120$, no slack.
+\item \textbf{Family H} (E12, E12b): $8\times8$, $10\times10$ and $12\times12$ cities (seeds 100--102, candidate fraction 0.3), three intervention types, budget equal to the grid side, equity; the two larger sizes add a 0.3\,\degC{} park-block synergy (quartic terms).
+\item \textbf{Family C} (E12, E12b): three park-only $8\times8$ cities (seeds 100--102).
+\item \textbf{E13 tile}: one LST-shaped $16\times16$ tile (seed 0).
+\end{itemize}
+All cities are synthetic (\code{quhi.uhi.generate\_city}).
+
+%======================================================================
+\chapter{Legacy audit (F1--F8)}\label{sec:audit}
+\input{../content/03_audit}
+
+\begin{table}[!htbp]
+\centering\caption{Legacy audit findings (from \code{docs/AUDIT.md}).}\label{tab:audit}
+\small\input{../tables/audit}
+\end{table}
+
+\begin{table}[!htbp]
+\centering\caption{F3: single-qubit thermal expectation ($h=0.5$, $\Gamma=0.7$, $\beta=2$, $P=16$).}
+\begin{tabular}{lr}
+\toprule
+& $\langle\sigma_z\rangle$ \\
+\midrule
+exact quantum & $-0.545$ \\
+\code{quhi} PIMC & $-0.546$ \\
+legacy action & $-0.997$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{F8 (minor/major), other issues.} The sign of the pairwise physics is inconsistent in the
+plan (synergy in one place, diminishing returns in another); \code{quhi} derives it from the
+saturation law (pairs positive, triples negative). The legacy suite has 19 failures, 141 passes and
+3 skips (qiskit tests excluded); several passing tests check only shapes. QAOA/VQE modules need
+qiskit and are stress-tested rather than checked for correctness. Results carry timestamps but no
+seeds or environment details. The claimed quantum scaling rests on one-dimensional disordered-chain
+results~\cite{santoro2002}; E6 shows that with the certified penalty the objective's level spacing
+is $7\times10^{-6}$ of the spectrum width at 14 qubits and shrinks as $1/\Lam$.
+
+\plainbox{The earlier code produced numbers of order $10^{10}$ that are penalty sizes, not
+temperatures, and a ``quantum'' sampler that was really a very cold classical one. We rebuilt the
+toolkit from scratch and do not use any of those numbers.}
+Full details and the \code{audit.json} pointers are in Appendix~\ref{app:legacy}.
+
+%======================================================================
+\chapter{Toolkit surface}\label{sec:toolkit}
+\code{quhi} is a Python package (numpy, scipy with HiGHS, numba, matplotlib, pandas).
+\begin{center}\small
+\begin{tabular}{p{0.34\linewidth}p{0.58\linewidth}}
+\toprule
+module & role \\
+\midrule
+\code{quhi.polynomial} & \code{BinaryPolynomial}: sparse pseudo-Boolean polynomial of any degree (QUBO/HUBO), upper-triangular QUBO export \\
+\code{quhi.constraints} & \code{ConstrainedBinaryProgram}, \code{LinearConstraint}; bounded-slack penalty model, certified $\Lsafe$, unbalanced/linear forms \\
+\code{quhi.quadratize} & Rosenberg substitution with a proved sufficient $M$ \\
+\code{quhi.uhi} & synthetic cities, interventions, saturating cooling, $K=1,2,3$ surrogates, fitted QUBO, park-block synergy, greedy planner \\
+\code{quhi.solvers.exact} & HiGHS MILP, exhaustive enumeration, exact spectra and annealing \\
+\code{quhi.solvers.classical} & SA, Tabu (numba kernels, native $k$-local deltas) \\
+\code{quhi.solvers.quantum} & SQA (PIMC, $\beta/P$), state-vector QAOA \\
+\code{quhi.solvers.mixers} & ConstrainedQAOA (Dicke/XY, per-cell XY, feasibility-projected), simulated on $\mathrm{span}(\Fset)$ \\
+\code{quhi.solvers.feasible*} & FeasibleSA, FeasibleSQA, Tabu-on-F \\
+\code{quhi.solvers.warmstart} & QAOA-seeded FeasibleSA (declared hybrid) \\
+\code{quhi.solvers.cqm} & CQM constraint spec, \code{to\_cqm}, and \code{sample\_cqm}, a Leap hybrid hook that returns ``skipped'' without \code{DWAVE\_API\_TOKEN} \\
+\code{quhi.postprocess} & repair and feasible local search \\
+\code{quhi.analysis} & metrics, benchmarking, plotting, GIF animation \\
+\bottomrule
+\end{tabular}
+\end{center}
+\specbox{The test suite (\code{pytest -q}, 133 tests) checks, among other things: the penalty lemma
+and theorem on random programs; that too small $\Lam$ or $M$ fails; the XY mixer against an explicit
+$2^n$ Pauli construction; subspace against full state-vector QAOA; feasibility at every
+FeasibleSA/FeasibleSQA step; PIMC against the exact single-qubit $\langle\sigma_z\rangle$; and that
+\code{sample\_cqm} makes no network call without a token.}
+
+%======================================================================
+\chapter{Encodings and surrogates}
+\section{E1: encoding certification}
+\exphead{Is the slack-penalty \QUBO{} with the corrected weight exact?}
+{Exhaustive enumeration of the full penalty \QUBO{} (decision plus slack variables) compared with
+HiGHS on the constrained program; 11 instances ($6\times6$ and $8\times8$ park, $6\times6$ mix, one
+with equity).}{\code{results/E1\_encoding/encoding\_certification.csv}, \code{summary.json}}{E1}
+\begin{table}[!htbp]\centering\caption{E1 (generated).}\resizebox{\linewidth}{!}{\input{../tables/e1}}\end{table}
+\paragraph{Reading.} The ground state equals the MILP optimum on 11 of 11 instances; $\Lsafe$ is
+1.81--2.21$\times$ smaller than the range bound (median 2.06). One configuration was skipped
+because its equity demand exceeds the budget. Some $6\times6$ instances show ground-state
+degeneracy 2, an artefact of the bounded slack encoding that is harmless for exactness.
+\plainbox{The translation of rules into penalties is correct: the lowest-energy answer is always
+the best legal plan.}
+
+\section{E2: surrogate fidelity}
+\exphead{How much cooling does each polynomial surrogate lose when its optimum is scored on the exact physics?}
+{$12\times12$ cities, 22 candidate cells, park budget $\le6$, 4 seeds per decay length; each
+surrogate's optimum found by enumerating all feasible plans.}{\code{results/E2\_fidelity/}}{E2}
+\begin{table}[!htbp]\centering\caption{E2: share of achievable cooling lost (generated).}\input{../tables/e2}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=0.8\linewidth]{e2_fidelity.png}\caption{E2 fidelity versus decay length.}\end{figure}
+\paragraph{Reading.} When kernels overlap strongly, the second-order truncation over-counts
+diminishing returns, believes clustered parks are much worse than they are, and spreads them out:
+at $L=300$\,m the Taylor \QUBO{} loses 10.30\%. The cubic \HUBO{} loses at most 0.02\%; a \QUBO{}
+with the same 253 coefficients fitted by least squares loses at most 0.42\%. The number of terms
+grows from 22 ($K{=}1$) to 253 ($K{=}2$) to 1{,}793 ($K{=}3$).
+
+\section{E4: penalty-weight sweep}
+\exphead{How does the penalty weight trade feasibility against sampler quality?}
+{$\Lam/\Lsafe\in\{0.01,\dots,3\}$, 3 seeds $\times$ 32 reads, mix $8\times8$ + equity and park $12\times12$.}
+{\code{results/E4\_penalty/}}{E4}
+\begin{table}[!htbp]\centering\caption{E4 (typed from \code{docs/RESULTS.md}).}\small\input{../tables/e4}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=0.6\linewidth]{e4_penalty_sweep.png}\caption{E4 penalty sweep.}\end{figure}
+\paragraph{Reading.} Below about $0.1\,\Lsafe$ raw feasibility collapses, as the theory predicts,
+but the infeasible low-penalty samples are better starting points for repair: $\Popt$ after
+post-processing rises from at most 0.03 to 0.42 (SA) and 0.47 (Tabu). The recipe is hybrid and not
+certified.
+
+\section{E5: native HUBO versus quadratised QUBO}
+\exphead{Should higher-order objectives be solved natively?}
+{$10\times10$ cities, 30 decision variables, cubic saturation plus quartic park-block synergy; the
+constrained \HUBO{} optimum is certified by MILP on all three instances.}{\code{results/E5\_hubo/}}{E5}
+\begin{table}[!htbp]\centering\caption{E5 (generated from \code{hubo\_summary.csv}).}\input{../tables/e5}\end{table}
+\paragraph{Reading.} Tabu finds the optimum on 99.0\% of raw reads on the native \HUBO{} and on 0\%
+after quadratisation (187--197 variables). The auxiliaries are tied to their pairs by penalties
+$M>S$, creating narrow valleys that single-flip dynamics cannot cross.
+
+\section{E10: penalty form (quick run, 2 instances)}
+\exphead{Do slack-free penalties help?}{Unbalanced and linear penalties against the quadratic slack penalty; 10 vs 13 variables.}{\code{results/E10\_penalty\_form/}}{E10}
+\begin{table}[!htbp]\centering\caption{E10 (generated).}\resizebox{\linewidth}{!}{\input{../tables/e10}}\end{table}
+\paragraph{Reading.} The unbalanced penalty at $0.1\,\Lsafe$ cuts the dynamic range from 163 to 16.5
+with an optimal ground state on these instances, but its exactness is instance-dependent. The linear
+penalty is a Lagrangian relaxation: its ground states are feasible or optimal only for lucky
+multipliers. This needs a full run before any claim.
+
+\section{E11: native HUBO versus Rosenberg QUBO spectra (quick run, 2 instances)}
+\exphead{Does quadratisation change the annealing bottleneck?}{Cubic ($K{=}3$) objective, 6 decision variables; exact spectra.}{\code{results/E11\_pubo\_gap/}}{E11}
+\begin{table}[!htbp]\centering\caption{E11 (typed from \code{docs/RESULTS.md}).}\resizebox{\linewidth}{!}{\input{../tables/e11}}\end{table}
+\paragraph{Reading.} The final gap is set by the slack penalty and is identical to three digits for
+A and B, but B needs 7 more qubits and its short-anneal ground-state probability is about
+100$\times$ lower. Removing the penalty (C, diagonal-only, not hardware-realisable) enlarges the gap
+about 250$\times$.
+
+%======================================================================
+\chapter{Classical bar}
+\section{E3: solver scaling (certified optima, safe penalty)}
+\exphead{How do penalty-\QUBO{} samplers scale against certified optima?}
+{Two families, 3 instances per size $\times$ 4 seeds $\times$ 32 reads; 1{,}000 sweeps for SA/SQA,
+SQA with $P=16$; SA-matched gets $(P{+}1)\times$ more sweeps; QAOA only up to 16 qubits.}
+{\code{results/E3\_scaling/}}{E3}
+\begin{table}[!htbp]\centering\caption{E3: median raw success per read (generated).}\resizebox{\linewidth}{!}{\input{../tables/e3}}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=0.7\linewidth]{e3_benefit_mix.png}\caption{E3 mean benefit per read on mix + equity.}\end{figure}
+\paragraph{Reading.} Tabu is the strongest sampler on single-intervention \QUBO{}s and weaker on
+the constrained multi-choice family. The SQA-over-SA advantage at equal sweeps largely disappears at
+equal flips on parks (17 variables: 0.54 $\pm$ 0.07 vs 0.50 $\pm$ 0.11); on mix + equity SQA's
+$+0.02$--$0.03$ benefit over SA-matched costs about 2.4$\times$ the wall time. Fixed-temperature SQA
+collapses in feasibility on mix + equity. QAOA at $p=4$ on 13 qubits puts 1\% on the optimum. The
+greedy planner is optimal on 8 of 15 park instances (worst gap 0.037\,\degC{}) and infeasible on 5
+of 9 mix instances because it ignores equity. After post-processing, every sampler, even random,
+solves most park instances, so post-processed success does not discriminate there.
+
+\section{E7: end-to-end showcase}
+\exphead{What does a full plan look like on a larger city?}
+{$14\times14$ city, parks, water and cool pavement, budget 24, equity; 81 decision variables and a
+105-variable \QUBO{} at $0.1\,\Lsafe$.}{\code{results/E7\_showcase/}}{E7}
+\begin{table}[!htbp]\centering\caption{E7 (typed from \code{docs/RESULTS.md}).}\resizebox{\linewidth}{!}{\input{../tables/e7}}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=\linewidth]{e7_transition.png}\caption{E7 baseline to optimised plans.}\end{figure}
+\paragraph{Reading.} The optimal plan lowers the exposure-weighted temperature by 1.17\,\degC{};
+all 20 baseline hot-spot cells drop below the hot-spot threshold under every plan. Water is never
+selected (5 units for 2.0\,\degC{} is dominated by parks at 3 units for 1.5\,\degC{}). The hottest
+core receives nothing because the generator places few candidate lots in dense blocks: the siting
+constraint, not the optimiser, limits what can be achieved.
+
+\section{E9: weak penalty plus repair as a declared hybrid}
+\exphead{Is weak penalty + repair the best penalty-based recipe?}
+{E3 mix + equity $8\times8$, $10\times10$, $12\times12$ (3 seeds each, all certified), 2 sampler
+seeds, $\alpha\in\{0.01,0.03,0.1,1\}$.}{\code{results/E9\_hybrid/}}{E9}
+\begin{table}[!htbp]\centering\caption{E9 (generated; full table in the appendix).}\input{../tables/e9}\end{table}
+\paragraph{Reading.} $\alpha=0.01$ plus repair raises post-processed $\Popt$ from at most 0.18 (safe
+$\Lam$) to 0.77--0.80 for SQA and SA-matched. SQA gains nothing over compute-matched SA. Greedy
+violates equity on 5 of 9 instances; MILP certifies in 3.8\,s on average. Nothing here meets MILP's
+$\Popt=1$.
+
+\section{HiGHS wall-clock across studies}
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+study & instances & HiGHS wall \\
+\midrule
+E7 showcase & 1 & 10.8\,s \\
+E9 (mix + equity) & 9 & 3.8\,s mean \\
+E12 family H & 9 & 0.81\,s mean, 2.29\,s max \\
+E12b family H & 9 & 0.77\,s mean \\
+E12b family C & 3 & 0.013\,s mean \\
+E13 tile & 1 & 1.67\,s \\
+\bottomrule
+\end{tabular}
+\end{center}
+Certification becomes slow above about 60 dense decision variables: a $20\times20$ pilot was not
+certified in 120\,s.
+
+%======================================================================
+\chapter{Quantum simulation and QAOA}
+\section{E6: small-scale quantum simulation (14 qubits)}
+\exphead{What limits analog annealing and QAOA on the certified penalty \QUBO{}?}
+{$7\times7$ city, 10 decision + 4 slack qubits, $H(s)=-(1-s)\sum X+sH_P$ with $H_P$ normalised to
+$[0,1]$; exact spectra, simulated anneals and QAOA.}{\code{results/E6\_quantum/}}{E6}
+\begin{table}[!htbp]\centering\caption{E6 (typed from \code{docs/RESULTS.md}).}\input{../tables/e6}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=0.8\linewidth]{e6_gap_vs_penalty.png}\caption{E6 gap versus penalty.}\end{figure}
+\paragraph{Reading.} The final gap scales exactly as $1/\Lam$ and the minimum gap sits at $s=1$, so
+$1/\Delta^2$ grows as $\Lam^2$, from $2\times10^{8}$ to $2\times10^{12}$. Practical anneal times
+($T\le1000$) give about 9$\times$ uniform ground-state probability, independent of $\Lam$. QAOA's
+approximation ratio ($\approx0.998$) is measured on a penalty-dominated scale; its optimum probability
+only grows from 0.08\% ($p=1$) to 0.17--0.19\% ($p=6$), about 30$\times$ uniform
+($1/2^{14}=6.1\times10^{-5}$).
+\plainbox{Making the rules strict makes the energy differences between good and bad plans tiny, and
+a quantum annealer would need impossibly long runs to tell them apart.}
+
+\section{E8: constraint-preserving mixers ($p\le2$)}
+\exphead{Do Dicke/XY and feasibility-projected mixers fix penalty QAOA?}
+{8 park instances (including the ``exactly 3'' twin), 6 mix + equity instances with $|\Fset|$ from
+720 to 2{,}243; $p\in\{1,2\}$, one L-BFGS-B run from a linear ramp plus one random restart;
+heuristics 32 reads $\times$ 3 seeds.}{\code{results/E8\_mixers/}}{E8}
+\begin{table}[!htbp]\centering\caption{E8 (typed from \code{docs/RESULTS.md}; full table in the appendix).}\resizebox{\linewidth}{!}{\input{../tables/e8}}\end{table}
+\paragraph{Reading.} $P(\mathrm{feasible})=1$ by construction, and $\Popt$ is 10--70$\times$ higher
+than X-mixer penalty QAOA at equal depth. On mix + equity, XY-QAOA barely beats uniform sampling of
+$\Fset$ ($\approx0.002$) while FeasibleSA reaches 0.39 per read. Complete-graph XY beats ring XY.
+Constraint-preserving QAOA closes the gap to penalty QAOA, not to greedy or MILP.
+
+\section{E8b: Dicke-XY depth curve}
+\exphead{Is $p\le2$ simply too shallow?}
+{Three ``exactly 3 parks'' $7\times7$ cities (seeds 4, 5, 6), $n=10$, $|\Fset|=120$, a single certified
+optimum each; $p=1,\dots,6$; L-BFGS-B from a linear ramp plus one random restart, maxiter 300.}
+{\code{results/E8b\_depth/}}{E8b}
+\begin{table}[!htbp]\centering\caption{E8b (generated): mean [min--max] $\Popt$.}\resizebox{\linewidth}{!}{\input{../tables/e8b}}\\[6pt]\input{../tables/e8b_ref}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=0.6\linewidth]{p_opt_vs_p.png}\caption{E8b $\Popt$ versus depth.}\end{figure}
+\paragraph{Reading.} $\Popt$ grows roughly logarithmically in $p$ (0.13 to 0.43) and is still below
+0.5 at $p=6$; the worst city reaches 0.17. Ring-XY at $p=6$ (0.11) is below complete-XY at $p=1$
+(0.13), and its curve is not monotone, a sign that one random restart does not reliably find the
+global angles. The X-mixer puts 0.9991 of its mass on feasible strings at $p=6$ but $\Popt=0.0086$,
+essentially uniform over $\Fset$: it learns the constraint, not the objective. Expected benefit for
+Dicke-XY complete rises from 0.955 to 0.993. Greedy misses the surrogate optimum on one city but
+scores 1.001 on the exact physics, a surrogate effect.
+\specbox{ConstrainedQAOA is an exact state-vector simulation on $\mathrm{span}(\Fset)$ from a dense
+$|\Fset|\times|\Fset|$ eigendecomposition. It is not a compiled gate circuit. At $p=6$ the wall-clock
+(8--15\,s per city) is spent in the classical angle optimiser.}
+
+\section{ANIM: animated comparisons}
+\exphead{How does each method move in its own search space, and what does its incumbent do to the temperature field?}
+{Showcase A: the E8b seed-4 ``exactly 3'' city ($n=10$). Showcase B: the E9 $10\times10$ mix +
+equity city, seed 0 ($n=39$, budget 18). At most 40 frames per GIF at 10\,fps; fixed temperature
+and cooling scales per instance.}{\code{results/ANIM/} (23 GIFs, \code{manifest.json})}{ANIM}
+\begin{figure}[!htbp]\centering\includegraphics[width=\linewidth]{compare_final.png}\caption{Showcase A, final plans: greedy, FeasibleSA, Dicke-XY $p=6$ (most probable plan), MILP.}\end{figure}
+\begin{figure}[!htbp]\centering\includegraphics[width=\linewidth]{compare_final_B.png}\caption{Showcase B, final plans: greedy (infeasible on equity), FeasibleSA, weak-penalty hybrid (in place of QAOA, $|\Fset|>4000$), MILP.}\end{figure}
+\paragraph{Reading.} In showcase A all four columns end on the same plan ($T=29.571$\,\degC{}); the
+QAOA column keeps flickering because its draws miss the optimum 35\% of the time. In showcase B the
+greedy column ends infeasible. GIFs are not embedded; they are linked:
+\begin{itemize}\scriptsize\sloppy
+\item \blob{results/ANIM/compare_temp_A_park_7x7_s4_exactly3.gif}
+\item \blob{results/ANIM/compare_temp_B_mix_10x10_s0.gif}
+\item \blob{results/ANIM/search_dicke_xy_complete_p6_A_park_7x7_s4_exactly3.gif}
+\item \blob{results/ANIM/search_xmixer_penalty_qaoa_p6_A_park_7x7_s4_exactly3.gif}
+\end{itemize}
+\specbox{Each method lives in a different space. QAOA GIFs show $|\psi|^2$ over $\Fset$ (or over
+all $2^{10}$ strings for the X-mixer); SA, Tabu and SQA show $f+\Lam P$ on the penalty \QUBO{};
+FeasibleSA shows constrained $f(x)$. The two energy axes are not comparable. Every map is computed
+from a real plan.}
+
+%======================================================================
+\chapter{Feasible-space PIMC: E12 and E12b}
+\section{FeasibleSQA}
+\input{../content/08_feasible_pimc}
+
+\section{E12: comparable-performance bakeoff}
+\exphead{At matched wall-clock, does any quantum or quantum-inspired method reach 0.95 of the best classical benefit on a hard family?}
+{Family H (9 instances) and family C (3), two sampler seeds; $\Tstar$ as defined above; contestants
+FeasibleSQA ($P=8$, 500 sweeps, 2 reads per batch), QAOA-seeded FeasibleSA and ConstrainedQAOA
+$p=2,4$ (only if $|\Fset|\le4000$), X-mixer penalty QAOA (negative control, $\le14$ qubits). The
+definition was committed before the run.}{\code{results/E12\_comparable/}}{E12}
+\begin{table}[!htbp]\centering\caption{E12 family H (generated; family C in the appendix).}\label{tab:e12}\input{../tables/e12}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=\linewidth]{e12_benefit_vs_time.png}\caption{E12 benefit versus wall-clock, families H and C.}\end{figure}
+\paragraph{Reading.} $\Tstar$ is 1.4--1.6\,s on $8\times8$, 4.0--4.7\,s on $10\times10$ and
+18--20\,s on $12\times12$ (0.13--0.15\,s on C). MILP certifies all 12 instances. FeasibleSQA is
+COMPARABLE by the pre-committed rule (0.981, minimum 0.85), and so are FeasibleSA (0.973) and
+Tabu-on-F (0.976); the whole difference comes from the $12\times12$ synergy cities and is within
+seed noise. ConstrainedQAOA is only simulable on $8\times8$; on the $|\Fset|=2484$ city the
+subspace setup exceeds $\Tstar$ and scores 0. The E9 hybrid is best on $10\times10$ and
+$12\times12$ but fails on all three $8\times8$ cities because greedy repair cannot restore
+feasibility when the budget is tight and equity binds. On family C every method except the X-mixer
+control reaches 1.000.
+
+\section{E12b: equal-work and tight-clock ablation}
+\exphead{After removing any padding and equalising proposals, does FeasibleSQA still match FeasibleSA?}
+{Same instances and configurations. Tight clock: FeasibleSA's median E12 wall-clock per instance.
+Equal work: $\Wstar$ = proposals FeasibleSQA used in E12 (median batches $\times$ 2 reads $\times$
+500 sweeps $\times$ 8 slices $\times\,n$), 2.1--8.2\,M on H and 0.3--0.5\,M on C, given to every
+method.}{\code{results/E12b\_ablation/}}{E12b}
+\begin{table}[!htbp]\centering\caption{E12b family H, both clocks (generated).}\label{tab:e12b}\resizebox{\linewidth}{!}{\input{../tables/e12b}}\end{table}
+\paragraph{Reading.} The tight clock reproduces E12 (FeasibleSQA 0.981, FeasibleSA 0.973) because
+HiGHS never set $\Tstar$. In that time FeasibleSQA made 3.6$\times$ as many proposals (4.66\,M vs
+1.30\,M). At equal proposals FeasibleSA reaches 0.988 and FeasibleSQA 0.983 (w/t/l 1/6/2): within
+5\% (threshold 0.938), not ahead. FeasibleSQA needs less wall-clock per proposal (7.1\,s vs 25\,s),
+an implementation property of early rejection. Tabu-on-F does not improve with more work (0.977).
+QAOA-seeded FeasibleSA reaches 1.000 on the three $8\times8$ cities with QAOA time excluded, as does
+FeasibleSA. Family C: every method reaches 1.000 on both clocks.
+
+\textbf{Erratum.} E12's FeasibleSQA benefit of 0.981 used 3.6$\times$ the proposals of FeasibleSA.
+At equal proposals FeasibleSQA scores 0.983, below FeasibleSA's 0.988. E12 must not be cited as a
+quantum-inspired win.
+\plainbox{The quantum-inspired method looked slightly better only because it tried more candidate
+plans in the same time. Given the same number of tries, the ordinary method is slightly better.}
+
+%======================================================================
+\chapter{E13: an LST-shaped tile}
+\exphead{Does a land-surface-temperature-shaped tile with scarce core lots open a classical gap?}
+{One $16\times16$ city, seed 0: compact hot core (+6\,\degC{}) and cool edge ($-1.5$\,\degC{}),
+population on the core, candidate lots removed from the core except 2; DEFAULT\_MIX, equity, budget
+16, 0.3\,\degC{} synergy; $n=108$, $|\Fset|>4000$; tight clock 68.59\,s; two sampler seeds.}
+{\code{results/E13\_tile/}}{E13}
+\begin{table}[!htbp]\centering\caption{E13 (typed from \code{results/E13\_tile/e13.md}).}\label{tab:e13}\input{../tables/e13}\end{table}
+\begin{figure}[!htbp]\centering\includegraphics[width=\linewidth]{e13_city.png}\caption{E13 tile: land use, baseline temperature, population.}\end{figure}
+\begin{figure}[!htbp]\centering\includegraphics[width=\linewidth]{e13_plans.png}\caption{E13 returned plans (sampler seed 0).}\end{figure}
+\paragraph{Reading.} \input{../content/09_tile}
+
+%======================================================================
+\chapter{Synthesis}
+\section{Hold-ups}\label{sec:holdups}
+The obstacles to a quantum or quantum-inspired result, each with the experiment that shows it:
+\begin{enumerate}
+\item \textbf{Encoding.} Slack penalties compress the objective against the spectrum width; the final
+gap scales as $1/\Lam$ (E6) and is unchanged by quadratisation (E11).
+\item \textbf{Rosenberg quadratisation.} 6.4$\times$ as many variables and deep narrow valleys; Tabu
+drops from 99.0\% to 0\% (E5).
+\item \textbf{SA matching.} SQA's advantage at equal sweeps disappears at equal flips (E3), SQA gains
+nothing over compute-matched SA in the hybrid (E9), and FeasibleSQA's lead disappears at equal
+proposals (E12b).
+\item \textbf{Submodularity.} Without equity, $-f$ is monotone submodular and greedy is optimal on 8 of
+15 park instances (E3) and on the E7 showcase.
+\item \textbf{Mixers.} Constraint-preserving mixers fix feasibility, not optimality: $\Popt=0.43$ at
+$p=6$ (E8b), 0.003 at $p=2$ on mix + equity (E8).
+\item \textbf{Cosmetic approximation ratios.} QAOA ratios near 0.998 on penalty-dominated scales hide
+optimum probabilities of 0.17--0.19\% (E6).
+\item \textbf{No QPU.} No constrained model was run on hardware or a hybrid cloud solver; the
+repository hook is inactive without a token.
+\end{enumerate}
+
+\section{Discussion}
+\input{../content/10_discussion}
+\section{Limitations}
+\input{../content/11_limitations}
+
+%======================================================================
+\chapter{Reference material}
+\section{Reproducibility}
+All numbers come from seeded runs of
+\begin{center}\code{python scripts/run\_experiments.py --only E$k$}\quad ($k\in\{$1,\dots,13, 8b, 12b, ANIM$\}$)\end{center}
+and the audit from \code{python scripts/audit\_legacy.py}. The environment is recorded in
+\code{results/env.json}: Python 3.11.15, numpy 2.4.6, scipy 1.17.1 (HiGHS), numba 0.67.0, Linux
+x86\_64, all solvers single-threaded on a 4-core container. E10 and E11 are quick runs. The tables
+in this document are regenerated with \code{python latex/tools/make\_tables.py} and the PDFs with
+\code{make -C latex all}.
+
+\section{Glossary}
+\input{../shared/acronyms}
+\begin{description}
+\item[$\btrue$] exact-physics cooling of a plan divided by that of the MILP plan; infeasible $=0$.
+\item[$\Popt$] fraction of runs (or exact probability) that return the certified optimum.
+\item[$\Lsafe$] certified sufficient penalty weight, $\Lam>f^\ast-L(f)$.
+\item[$\Fset$] the feasible set of decision vectors.
+\item[$\Tstar$] matched wall-clock per run in E12.
+\item[$\Wstar$] equal proposal budget per run in E12b.
+\item[pp] post-processing: repair plus feasible local search.
+\item[SA-matched] SA with $(P{+}1)\times$ the sweeps, i.e.\ as many flip attempts as SQA.
+\item[w/t/l] instances where a method's seed-mean benefit is above / equal to / below FeasibleSA's.
+\end{description}
+
+\section{File map of \texttt{results/}}
+\begin{center}\small
+\begin{tabular}{p{0.3\linewidth}p{0.62\linewidth}}
+\toprule
+directory & contents \\
+\midrule
+\code{audit/} & \code{audit.json} (legacy audit evidence A1--A7) \\
+\code{E1\_encoding/} & \code{encoding\_certification.csv}, \code{summary.json} \\
+\code{E2\_fidelity/} & \code{fidelity.csv}, \code{fidelity\_summary.csv}, \code{fidelity.png}, \code{plans\_L200\_seed0.png} \\
+\code{E3\_scaling/} & \code{scaling\_raw.csv}, \code{scaling\_summary.csv}, \code{greedy\_planner.csv}, success/benefit/TTS plots \\
+\code{E4\_penalty/} & \code{penalty\_raw.csv}, \code{penalty\_summary.csv}, \code{penalty\_sweep.png} \\
+\code{E5\_hubo/} & \code{hubo\_raw.csv}, \code{hubo\_summary.csv} \\
+\code{E6\_quantum/} & \code{quantum\_small.csv}, \code{gap\_vs\_penalty.png}, \code{spectrum\_safe\_penalty.png} \\
+\code{E7\_showcase/} & \code{summary.json}, city, transition, cooling and convergence plots \\
+\code{E8\_mixers/} & \code{raw.csv}, \code{summary.csv}, \code{summary\_by\_family.csv}, \code{e8.md} \\
+\code{E8b\_depth/} & \code{raw.csv}, \code{summary.csv}, \code{e8b.md}, \code{p\_opt\_vs\_p.png} \\
+\code{E9\_hybrid/} & \code{raw.csv}, \code{summary.csv}, \code{summary\_by\_size.csv} \\
+\code{E10\_penalty\_form/} & \code{raw.csv}, \code{summary.csv} \\
+\code{E11\_pubo\_gap/} & \code{raw.csv} \\
+\code{E12\_comparable/} & \code{raw.csv}, \code{summary.csv}, \code{e12.md}, \code{benefit\_vs\_time.png}, plan grids \\
+\code{E12b\_ablation/} & \code{raw.csv}, \code{summary.csv}, \code{e12b.md} \\
+\code{E13\_tile/} & \code{raw.csv}, \code{e13.md}, \code{city.png}, \code{plans.png} \\
+\code{ANIM/} & 23 GIFs, \code{manifest.json}, \code{compare\_final*.png} \\
+\code{papers/} & the three PDFs built from \code{latex/} \\
+\code{env.json} & software environment and run timestamps \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\appendix
+\input{appendix_tables}
+\input{appendix_audit}
+\input{appendix_legacy}
+
+\bibliographystyle{plain}
+\bibliography{../bib/refs}
+\end{document}

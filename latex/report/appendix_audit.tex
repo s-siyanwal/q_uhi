@@ -1,0 +1,20 @@
+\chapter{Reproducing the audit}\label{app:audit}
+\code{python scripts/audit\_legacy.py} imports the \emph{unmodified} legacy code from
+\code{UHIP\_Quantum-main.zip} and writes \code{results/audit/audit.json}. The zip is read only for
+this purpose; nothing in \code{quhi/} imports it, and \code{docs/LEGACY.md} marks the zip and the
+root \code{.docx} files as provenance only. The JSON keys map to the findings as follows.
+\begin{center}\small
+\begin{tabular}{llp{0.55\linewidth}}
+\toprule
+key & finding & recorded evidence \\
+\midrule
+\code{A1\_ising\_roundtrip} & F6 & forward energies match; round-trip matrix and energies do not \\
+\code{A2\_green\_layout\_qubo} & F1 & legacy green-layout \QUBO{} at area-budget fractions 0.3 and 0.33 \\
+\code{A3\_sqa\_temperature} & F3 & $h=0.5$, $\Gamma=0.7$, $\beta=2$, $P=16$: exact $-0.545$, ours $-0.546$, legacy $-0.997$ \\
+\code{A4\_theorem\_iv1\_counterexample} & F4 & $\Lam=2.02$; penalised minimiser $(1,1)$ infeasible, violation$^2=0.04$ \\
+\code{A5\_four\_cell\_example} & F7 & constrained optimum $(1,1,0,0)$, $f=-0.8$; symmetric reading selects one cell \\
+\code{A6\_research\_results} & F2 & legacy energies are penalty magnitudes; SQA plan all-zero (not cited) \\
+\code{A7\_auto\_penalty\_underestimate} & F5 & $n=10$: legacy weight 10, true range 100 \\
+\bottomrule
+\end{tabular}
+\end{center}

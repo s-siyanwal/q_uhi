@@ -1,0 +1,11 @@
+\paragraph{Truncation order (E2).} On $12\times12$ cities with 22 candidate cells and a park
+budget of at most 6, each surrogate's optimum is found by enumerating all feasible plans and then
+scored on Eq.~\eqref{eq:sat}. Table~\ref{tab:e2} gives the share of the achievable cooling lost.
+At $L=300$\,m the Taylor \QUBO{} loses 10.30\%, because the second-order truncation over-counts
+diminishing returns and spreads parks out. The cubic \HUBO{} loses at most 0.02\% at any $L$, and a
+\QUBO{} with the same 253 coefficients fitted by least squares loses at most 0.42\%.
+
+\paragraph{Native higher order (E5).} On a quartic \HUBO{} with 30 variables (cubic saturation
+plus park-block synergy), Tabu search finds the certified optimum on 99.0\% of raw reads. After
+Rosenberg quadratisation, which needs 187--197 variables, raw success drops to 0\%: the auxiliary
+penalties create narrow valleys that single-flip dynamics cannot cross.
